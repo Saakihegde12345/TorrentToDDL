@@ -3,7 +3,16 @@ name: Build Android APK
 on:
   push:
     branches: [ "main", "master" ]
+  pull_request:
+    branches: [ "main", "master" ]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-build-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -19,15 +28,50 @@ jobs:
           distribution: 'temurin'
 
       - name: Setup Gradle
-        uses: gradle/actions/setup-gradle@v3
+        uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.5'
 
-      - name: Build Debug APK
-        run: gradle assembleDebug --no-daemon
+      - name: Run Android lint and checks
+        run: |
+          set -euo pipefail
+          if [[ -f ./gradlew ]]; then
+            echo "Using the committed Gradle wrapper."
+            bash ./gradlew lintDebug check --no-daemon --stacktrace
+          else
+            echo "::warning::No Gradle wrapper found; using Gradle 8.5 provisioned by gradle/actions/setup-gradle."
+            gradle lintDebug check --no-daemon --stacktrace
+          fi
 
-      - name: Upload Compiled APK
+      - name: Build debug APK
+        if: ${{ always() && !cancelled() }}
+        run: |
+          set -euo pipefail
+          if [[ -f ./gradlew ]]; then
+            bash ./gradlew assembleDebug --no-daemon --stacktrace
+          else
+            gradle assembleDebug --no-daemon --stacktrace
+          fi
+
+      - name: Upload debug APK
+        if: ${{ always() && !cancelled() }}
         uses: actions/upload-artifact@v4
         with:
           name: TorrentToDDL-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Upload Android build reports
+        if: ${{ always() && !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: TorrentToDDL-build-reports
+          path: |
+            app/build/reports/**
+            app/build/test-results/**
+            app/build/outputs/logs/**
+            build/reports/**
+            build/test-results/**
+          if-no-files-found: warn
+          retention-days: 14

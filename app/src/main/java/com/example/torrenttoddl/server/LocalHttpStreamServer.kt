@@ -1,5 +1,6 @@
 package com.example.torrenttoddl.server
 
+import com.example.torrenttoddl.engine.TorrentFileEntry
 import com.example.torrenttoddl.engine.TorrentStreamEngine
 import fi.iki.elonen.NanoHTTPD
 import java.net.Inet4Address
@@ -7,75 +8,188 @@ import java.net.NetworkInterface
 import java.net.URLConnection
 
 class LocalHttpStreamServer(
-    private val port: Int = 8080,
+    port: Int = 8080,
     private val engine: TorrentStreamEngine
 ) : NanoHTTPD(port) {
 
     override fun serve(session: IHTTPSession): Response {
-        val uri = session.uri ?: return newFixedLengthResponse(Response.Status.NOT_FOUND, MIME_PLAINTEXT, "Not Found")
+        val uri = session.uri ?: return textResponse(
+            Response.Status.NOT_FOUND,
+            "Not Found"
+        )
 
-        val segments = uri.trim('/').split("/")
-        if (segments.size < 2 || segments[0] != "files") {
-            return newFixedLengthResponse(
+        val segments = uri.substringBefore('?').split('/').filter { it.isNotEmpty() }
+        if (segments.size < 3 || segments[0] != "files") {
+            return textResponse(
                 Response.Status.BAD_REQUEST,
-                MIME_PLAINTEXT,
                 "Usage: /files/{fileIndex}/{fileName}"
             )
         }
 
         val fileIndex = segments[1].toIntOrNull()
-            ?: return newFixedLengthResponse(Response.Status.BAD_REQUEST, MIME_PLAINTEXT, "Invalid file index")
-
-        val rangeHeader = session.headers["range"]
-        var startByte = 0L
-        var endByte = -1L
-
-        if (rangeHeader != null && rangeHeader.startsWith("bytes=")) {
-            val rangeSpec = rangeHeader.removePrefix("bytes=").split("-")
-            startByte = rangeSpec.getOrNull(0)?.toLongOrNull() ?: 0L
-            endByte = rangeSpec.getOrNull(1)?.toLongOrNull() ?: -1L
+            ?: return textResponse(Response.Status.BAD_REQUEST, "Invalid file index")
+        if (fileIndex < 0) {
+            return textResponse(Response.Status.BAD_REQUEST, "Invalid file index")
         }
 
-        val streamPair = engine.openFileStream(fileIndex, startByte)
-            ?: return newFixedLengthResponse(
+        val engineStatus = engine.status.value
+        if (!engineStatus.isReadyForDdl) {
+            val unavailableText = engineStatus.stateText
+                .takeIf { it.isNotBlank() && it != "Idle" }
+                ?: "Torrent metadata not ready yet"
+            return textResponse(
                 Response.Status.SERVICE_UNAVAILABLE,
-                MIME_PLAINTEXT,
-                "Torrent metadata not ready yet"
+                unavailableText
+            )
+        }
+
+        val fileEntry = engineStatus.files.getOrNull(fileIndex)
+            ?: return textResponse(Response.Status.BAD_REQUEST, "Invalid file index")
+        if (fileEntry.sizeBytes < 0L) {
+            return textResponse(Response.Status.SERVICE_UNAVAILABLE, "Invalid torrent file size")
+        }
+
+        val rangeHeader = headerValue(session, "range")
+        val requestedRange = if (rangeHeader == null) {
+            null
+        } else {
+            when (val parsed = parseRange(rangeHeader, fileEntry.sizeBytes)) {
+                is RangeResult.Invalid -> {
+                    return textResponse(Response.Status.BAD_REQUEST, parsed.message)
+                }
+                is RangeResult.Unsatisfiable -> {
+                    return rangeNotSatisfiable(fileEntry.sizeBytes, parsed.message)
+                }
+                is RangeResult.Satisfiable -> parsed.range
+            }
+        }
+
+        val startByte = requestedRange?.start ?: 0L
+        val endByte = requestedRange?.endInclusive
+        val endByteOffset = endByte?.let { if (it == Long.MAX_VALUE) Long.MAX_VALUE else it + 1L }
+        val streamPair = engine.openFileStream(fileIndex, startByte, endByteOffset)
+            ?: return textResponse(
+                Response.Status.SERVICE_UNAVAILABLE,
+                "Torrent stream is not available yet"
             )
 
-        val (fileEntry, torrentInputStream) = streamPair
-        val totalSize = fileEntry.sizeBytes
-        if (endByte < 0 || endByte >= totalSize) {
-            endByte = totalSize - 1
-        }
-        val contentLength = (endByte - startByte) + 1
-        val mimeType = URLConnection.guessContentTypeFromName(fileEntry.name) ?: "application/octet-stream"
-
-        return if (rangeHeader != null) {
-            newFixedLengthResponse(
-                Response.Status.PARTIAL_CONTENT,
-                mimeType,
-                torrentInputStream,
-                contentLength
-            ).apply {
-                addHeader("Accept-Ranges", "bytes")
-                addHeader("Content-Range", "bytes $startByte-$endByte/$totalSize")
-                addHeader("Content-Length", contentLength.toString())
-                addHeader("Content-Disposition", "inline; filename=\"${fileEntry.name}\"")
-            }
+        val (streamEntry, torrentInputStream) = streamPair
+        val contentLength = if (requestedRange == null) {
+            streamEntry.sizeBytes
         } else {
-            newFixedLengthResponse(
-                Response.Status.OK,
-                mimeType,
-                torrentInputStream,
-                totalSize
-            ).apply {
-                addHeader("Accept-Ranges", "bytes")
-                addHeader("Content-Length", totalSize.toString())
-                addHeader("Content-Disposition", "attachment; filename=\"${fileEntry.name}\"")
+            requestedRange.endInclusive - requestedRange.start + 1L
+        }
+        val mimeType = URLConnection.guessContentTypeFromName(streamEntry.name)
+            ?: "application/octet-stream"
+
+        return newFixedLengthResponse(
+            if (requestedRange == null) Response.Status.OK else Response.Status.PARTIAL_CONTENT,
+            mimeType,
+            torrentInputStream,
+            contentLength
+        ).apply {
+            addHeader("Accept-Ranges", "bytes")
+            addHeader("Content-Length", contentLength.toString())
+            if (requestedRange != null) {
+                addHeader(
+                    "Content-Range",
+                    "bytes ${requestedRange.start}-${requestedRange.endInclusive}/${streamEntry.sizeBytes}"
+                )
             }
+            addHeader(
+                "Content-Disposition",
+                contentDisposition(streamEntry, attachment = requestedRange == null)
+            )
         }
     }
+
+    private fun parseRange(header: String, totalSize: Long): RangeResult {
+        val value = header.trim()
+        if (!value.regionMatches(0, "bytes=", 0, 6, ignoreCase = true)) {
+            return RangeResult.Invalid("Invalid Range header")
+        }
+
+        val spec = value.substring(6).trim()
+        if (spec.isEmpty() || spec.contains(',')) {
+            return RangeResult.Invalid("Only one byte range is supported")
+        }
+
+        val parts = spec.split('-', limit = 2)
+        if (parts.size != 2) return RangeResult.Invalid("Invalid byte range")
+
+        val first = parts[0].trim()
+        val second = parts[1].trim()
+        if (first.isEmpty() && second.isEmpty()) {
+            return RangeResult.Invalid("Invalid byte range")
+        }
+
+        if (first.isEmpty()) {
+            val suffixLength = parseNonNegativeLong(second)
+                ?: return RangeResult.Invalid("Invalid byte range")
+            if (suffixLength == 0L || totalSize == 0L) {
+                return RangeResult.Unsatisfiable("Requested range is not satisfiable")
+            }
+            val start = if (suffixLength >= totalSize) 0L else totalSize - suffixLength
+            return RangeResult.Satisfiable(ByteRange(start, totalSize - 1L))
+        }
+
+        val start = parseNonNegativeLong(first)
+            ?: return RangeResult.Invalid("Invalid byte range")
+        if (start >= totalSize) {
+            return RangeResult.Unsatisfiable("Requested range is not satisfiable")
+        }
+
+        if (second.isEmpty()) {
+            return RangeResult.Satisfiable(ByteRange(start, totalSize - 1L))
+        }
+
+        val requestedEnd = parseNonNegativeLong(second)
+            ?: return RangeResult.Invalid("Invalid byte range")
+        if (requestedEnd < start) {
+            return RangeResult.Unsatisfiable("Requested range is not satisfiable")
+        }
+
+        return RangeResult.Satisfiable(
+            ByteRange(start, minOf(requestedEnd, totalSize - 1L))
+        )
+    }
+
+    private fun parseNonNegativeLong(value: String): Long? {
+        if (value.isEmpty() || value.any { it !in '0'..'9' }) return null
+        return value.toLongOrNull()
+    }
+
+    private fun rangeNotSatisfiable(totalSize: Long, message: String): Response =
+        textResponse(Response.Status.RANGE_NOT_SATISFIABLE, message).apply {
+            addHeader("Accept-Ranges", "bytes")
+            addHeader("Content-Range", "bytes */$totalSize")
+        }
+
+    private fun textResponse(status: Response.Status, body: String): Response =
+        newFixedLengthResponse(status, MIME_PLAINTEXT, body)
+
+    private fun headerValue(session: IHTTPSession, name: String): String? =
+        session.headers.entries.firstOrNull { it.key.equals(name, ignoreCase = true) }?.value
+
+    private fun contentDisposition(fileEntry: TorrentFileEntry, attachment: Boolean): String {
+        val displayName = fileEntry.name
+            .substringAfterLast('/')
+            .substringAfterLast('\\')
+            .replace('"', '_')
+            .replace('\r', '_')
+            .replace('\n', '_')
+            .ifBlank { "download" }
+        val disposition = if (attachment) "attachment" else "inline"
+        return "$disposition; filename=\"$displayName\""
+    }
+
+    private sealed class RangeResult {
+        data class Satisfiable(val range: ByteRange) : RangeResult()
+        data class Invalid(val message: String) : RangeResult()
+        data class Unsatisfiable(val message: String) : RangeResult()
+    }
+
+    private data class ByteRange(val start: Long, val endInclusive: Long)
 
     companion object {
         fun getLocalLanIpAddress(): String {

@@ -6,16 +6,20 @@ import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
 import android.content.Intent
+import android.content.pm.ServiceInfo
 import android.os.Binder
+import android.os.Build
 import android.os.IBinder
 import androidx.core.app.NotificationCompat
+import com.example.torrenttoddl.MainActivity
 import com.example.torrenttoddl.engine.TorrentStreamEngine
 import com.example.torrenttoddl.server.LocalHttpStreamServer
+import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import java.io.File
+import kotlinx.coroutines.launch
 
 class TorrentGatewayService : Service() {
 
@@ -24,6 +28,8 @@ class TorrentGatewayService : Service() {
         private set
     private var httpServer: LocalHttpStreamServer? = null
     private val binder = LocalBinder()
+    private var foregroundActive = false
+    private var lastMagnetRequest: String? = null
 
     inner class LocalBinder : Binder() {
         fun getService(): TorrentGatewayService = this@TorrentGatewayService
@@ -32,7 +38,7 @@ class TorrentGatewayService : Service() {
     override fun onCreate() {
         super.onCreate()
         createNotificationChannel()
-        startForeground(NOTIFICATION_ID, buildNotification("Gateway Ready on port $SERVER_PORT"))
+        promoteToForeground()
 
         val cacheDir = File(getExternalFilesDir(null) ?: filesDir, "torrent_cache").apply { mkdirs() }
         engine = TorrentStreamEngine(cacheDir, serviceScope)
@@ -44,14 +50,25 @@ class TorrentGatewayService : Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
-        if (intent?.action == ACTION_STOP_SERVICE) {
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
-            return START_NOT_STICKY
+        when (intent?.action) {
+            ACTION_STOP_SERVICE -> {
+                stopGateway()
+                return START_NOT_STICKY
+            }
+
+            ACTION_RESET_SERVICE -> {
+                promoteToForeground()
+                resetSession()
+                return START_STICKY
+            }
         }
 
-        val magnet = intent?.getStringExtra(EXTRA_MAGNET_URI)
-        if (!magnet.isNullOrBlank()) {
+        if (!foregroundActive) promoteToForeground()
+        if (::engine.isInitialized) engine.startSession()
+
+        val magnet = intent?.getStringExtra(EXTRA_MAGNET_URI)?.trim()
+        if (!magnet.isNullOrBlank() && magnet != lastMagnetRequest) {
+            lastMagnetRequest = magnet
             engine.resolveMagnetOrTorrent(magnet)
         }
         return START_STICKY
@@ -59,10 +76,30 @@ class TorrentGatewayService : Service() {
 
     override fun onBind(intent: Intent?): IBinder = binder
 
+    fun resetSession() {
+        if (!::engine.isInitialized) return
+        promoteToForeground()
+        lastMagnetRequest = null
+        serviceScope.launch(Dispatchers.IO) {
+            engine.resetSession()
+        }
+    }
+
+    private fun stopGateway() {
+        serviceScope.launch(Dispatchers.IO) {
+            if (::engine.isInitialized) engine.stopSession()
+            foregroundActive = false
+            stopForeground(STOP_FOREGROUND_REMOVE)
+            stopSelf()
+        }
+    }
+
     override fun onDestroy() {
         httpServer?.stop()
-        engine.stopSession()
+        httpServer = null
+        if (::engine.isInitialized) engine.stopSession()
         serviceScope.cancel()
+        foregroundActive = false
         super.onDestroy()
     }
 
@@ -72,11 +109,35 @@ class TorrentGatewayService : Service() {
             "Torrent DDL Gateway",
             NotificationManager.IMPORTANCE_LOW
         )
-        val manager = getSystemService(NotificationManager::class.java)
-        manager.createNotificationChannel(channel)
+        getSystemService(NotificationManager::class.java).createNotificationChannel(channel)
+    }
+
+    private fun promoteToForeground() {
+        if (foregroundActive) return
+        val notification = buildNotification("Gateway Ready on port $SERVER_PORT")
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+            startForeground(
+                NOTIFICATION_ID,
+                notification,
+                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+            )
+        } else {
+            startForeground(NOTIFICATION_ID, notification)
+        }
+        foregroundActive = true
     }
 
     private fun buildNotification(contentText: String): Notification {
+        val openIntent = Intent(this, MainActivity::class.java).apply {
+            flags = Intent.FLAG_ACTIVITY_SINGLE_TOP or Intent.FLAG_ACTIVITY_CLEAR_TOP
+        }
+        val openPendingIntent = PendingIntent.getActivity(
+            this,
+            1,
+            openIntent,
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT
+        )
+
         val stopIntent = Intent(this, TorrentGatewayService::class.java).apply {
             action = ACTION_STOP_SERVICE
         }
@@ -91,7 +152,10 @@ class TorrentGatewayService : Service() {
             .setContentTitle("Torrent-to-DDL Local Gateway")
             .setContentText(contentText)
             .setSmallIcon(android.R.drawable.stat_sys_download)
+            .setContentIntent(openPendingIntent)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop Gateway", stopPendingIntent)
+            .setCategory(NotificationCompat.CATEGORY_SERVICE)
+            .setOnlyAlertOnce(true)
             .setOngoing(true)
             .build()
     }
@@ -102,5 +166,6 @@ class TorrentGatewayService : Service() {
         const val SERVER_PORT = 8080
         const val EXTRA_MAGNET_URI = "extra_magnet_uri"
         const val ACTION_STOP_SERVICE = "com.example.torrenttoddl.STOP_SERVICE"
+        const val ACTION_RESET_SERVICE = "com.example.torrenttoddl.RESET_SERVICE"
     }
 }
