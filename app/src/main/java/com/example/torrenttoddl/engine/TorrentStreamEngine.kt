@@ -22,6 +22,7 @@ import org.libtorrent4j.alerts.Alert
 import org.libtorrent4j.alerts.AlertType
 import org.libtorrent4j.alerts.MetadataReceivedAlert
 import java.io.File
+import java.io.InputStream
 
 data class TorrentFileEntry(
     val index: Int,
@@ -38,14 +39,20 @@ data class EngineStatus(
     val downloadSpeedKbps: Int = 0,
     val peers: Int = 0,
     val files: List<TorrentFileEntry> = emptyList(),
-    val isReadyForDdl: Boolean = false
+    val isReadyForDdl: Boolean = false,
+    val infoHash: String = ""
 )
+
+interface TorrentFileSource {
+    val status: StateFlow<EngineStatus>
+    fun openFileStream(fileIndex: Int, startByteOffset: Long, endByteOffset: Long? = null): Pair<TorrentFileEntry, InputStream>?
+}
 
 class TorrentStreamEngine(
     private val downloadRootDir: File,
     private val scope: CoroutineScope,
     private val sessionManager: SessionManager = SessionManager()
-) {
+) : TorrentFileSource {
     private val stateLock = Any()
     private val sessionLock = Any()
 
@@ -65,7 +72,7 @@ class TorrentStreamEngine(
     private var retiredHandle: TorrentHandle? = null
 
     private val _status = MutableStateFlow(EngineStatus())
-    val status: StateFlow<EngineStatus> = _status
+    override val status: StateFlow<EngineStatus> = _status
 
     private val alertListener = object : AlertListener {
         override fun types(): IntArray = intArrayOf(
@@ -276,7 +283,8 @@ class TorrentStreamEngine(
                 stateText = "DDL Stream Active (Sequential Mode)",
                 torrentName = info.name(),
                 files = entries,
-                isReadyForDdl = true
+                isReadyForDdl = true,
+                infoHash = expected.toHex()
             )
         }
         startTelemetryLoop(generation)
@@ -348,10 +356,10 @@ class TorrentStreamEngine(
         }
     }
 
-    fun openFileStream(
+    override fun openFileStream(
         fileIndex: Int,
         startByteOffset: Long,
-        endByteOffset: Long? = null
+        endByteOffset: Long?
     ): Pair<TorrentFileEntry, TorrentInputStream>? {
         val streamData = synchronized(stateLock) {
             val handle = activeHandle ?: return null
