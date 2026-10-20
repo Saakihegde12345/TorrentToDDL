@@ -43,9 +43,9 @@ data class EngineStatus(
 
 class TorrentStreamEngine(
     private val downloadRootDir: File,
-    private val scope: CoroutineScope
+    private val scope: CoroutineScope,
+    private val sessionManager: SessionManager = SessionManager()
 ) {
-    private val sessionManager = SessionManager()
     private val stateLock = Any()
     private val sessionLock = Any()
 
@@ -53,7 +53,10 @@ class TorrentStreamEngine(
     private var activeHandle: TorrentHandle? = null
 
     @Volatile
-    private var activeTorrentInfo: TorrentInfo? = null
+    private var activePieceLength: Int = 0
+
+    @Volatile
+    private var uiVisible = true
 
     private var loadJob: Job? = null
     private var telemetryJob: Job? = null
@@ -92,8 +95,6 @@ class TorrentStreamEngine(
 
     fun startSession(): Boolean {
         synchronized(sessionLock) {
-            if (sessionManager.isRunning) return true
-
             return try {
                 val settings = SettingsPack()
                 settings.setBoolean(
@@ -104,8 +105,13 @@ class TorrentStreamEngine(
                     org.libtorrent4j.swig.settings_pack.bool_types.enable_lsd.swigValue(),
                     true
                 )
-                sessionManager.addListener(alertListener)
-                sessionManager.start(SessionParams(settings))
+                if (sessionManager.isRunning) {
+                    sessionManager.applySettings(settings)
+                    sessionManager.resume()
+                } else {
+                    sessionManager.addListener(alertListener)
+                    sessionManager.start(SessionParams(settings))
+                }
                 true
             } catch (e: Exception) {
                 runCatching { sessionManager.removeListener(alertListener) }
@@ -126,13 +132,16 @@ class TorrentStreamEngine(
             reportLoadError(generation, "Invalid magnet URI")
             return
         }
-        if (!startSession()) {
-            reportLoadError(generation, "Torrent session is not available")
-            return
-        }
 
         val job = scope.launch(Dispatchers.IO) {
             try {
+                synchronized(sessionLock) {
+                    if (!isCurrentGeneration(generation)) return@launch
+                    if (!startSession()) {
+                        reportLoadError(generation, "Torrent session is not available")
+                        return@launch
+                    }
+                }
                 val metadataBytes = sessionManager.fetchMagnet(
                     normalizedMagnet,
                     MAGNET_METADATA_TIMEOUT_SECONDS,
@@ -161,14 +170,17 @@ class TorrentStreamEngine(
 
     fun loadTorrentBytes(bytes: ByteArray) {
         val generation = beginLoad("Loading torrent metadata...")
-        if (!startSession()) {
-            reportLoadError(generation, "Torrent session is not available")
-            return
-        }
 
         val torrentBytes = bytes.copyOf()
         val job = scope.launch(Dispatchers.IO) {
             try {
+                synchronized(sessionLock) {
+                    if (!isCurrentGeneration(generation)) return@launch
+                    if (!startSession()) {
+                        reportLoadError(generation, "Torrent session is not available")
+                        return@launch
+                    }
+                }
                 val torrentInfo = TorrentInfo.bdecode(torrentBytes)
                 addTorrent(generation, torrentInfo)
             } catch (e: CancellationException) {
@@ -194,15 +206,30 @@ class TorrentStreamEngine(
     }
 
     private fun handleFromAlert(handle: TorrentHandle) {
-        synchronized(sessionLock) {
-            val info = runCatching { handle.torrentFile() }.getOrNull() ?: return
-            val generation = synchronized(stateLock) {
-                val expected = expectedInfoHash ?: return
-                if (isRetiredHandle(handle) || !safeInfoHashMatches(handle, expected)) return
-                loadGeneration
+        // Alert handles borrow native memory from the alert. Never retain one or
+        // capture it in a coroutine: the next alert batch can free that memory.
+        val hash = handle.infoHash().toHex()
+        val generation = synchronized(stateLock) {
+            val expected = expectedInfoHash ?: return
+            if (expected.toHex() != hash) return
+            loadGeneration
+        }
+        scope.launch(Dispatchers.IO) {
+            try {
+                synchronized(sessionLock) {
+                    val expected = synchronized(stateLock) {
+                        if (loadGeneration != generation) return@launch
+                        expectedInfoHash ?: return@launch
+                    }
+                    // find() returns an owned torrent_handle, unlike alert.handle().
+                    val ownedHandle = sessionManager.find(expected) ?: return@launch
+                    if (isRetiredHandle(ownedHandle)) return@launch
+                    val info = ownedHandle.torrentFile() ?: return@launch
+                    onMetadataReady(ownedHandle, info, generation)
+                }
+            } catch (e: Exception) {
+                reportLoadError(generation, "Unable to initialize torrent: ${errorText(e)}")
             }
-
-            onMetadataReady(handle, info, generation)
         }
     }
 
@@ -242,7 +269,8 @@ class TorrentStreamEngine(
             if (isRetiredHandle(handle) || !safeInfoHashMatches(handle, expected)) return
 
             activeHandle = handle
-            activeTorrentInfo = info
+            // Snapshot primitive metadata while the session still owns info.
+            activePieceLength = info.pieceLength()
             retiredHandle = null
             _status.value = EngineStatus(
                 stateText = "DDL Stream Active (Sequential Mode)",
@@ -259,6 +287,7 @@ class TorrentStreamEngine(
             if (loadGeneration != generation || activeHandle == null) return
             telemetryJob?.cancel()
             val job = scope.launch(Dispatchers.IO) {
+                var cachedTransfersPaused = false
                 while (isActive) {
                     val handle = synchronized(stateLock) {
                         if (loadGeneration == generation) activeHandle else null
@@ -271,12 +300,32 @@ class TorrentStreamEngine(
 
                     try {
                         val torrentStatus = handle.status()
+                        val fullyCached = torrentStatus.progress() >= 1f
+                        if (fullyCached && !cachedTransfersPaused) {
+                            synchronized(sessionLock) {
+                                if (!isCurrentGeneration(generation)) return@launch
+                                // A gateway need not keep seeding after caching. Keep
+                                // verified disk data readable, but stop peer transfers
+                                // and discovery until the next explicit torrent load.
+                                sessionManager.pause()
+                                val settings = SettingsPack()
+                                settings.setBoolean(
+                                    org.libtorrent4j.swig.settings_pack.bool_types.enable_dht.swigValue(), false
+                                )
+                                settings.setBoolean(
+                                    org.libtorrent4j.swig.settings_pack.bool_types.enable_lsd.swigValue(), false
+                                )
+                                sessionManager.applySettings(settings)
+                                cachedTransfersPaused = true
+                            }
+                        }
                         var stillCurrent = true
                         synchronized(stateLock) {
                             if (loadGeneration != generation || activeHandle !== handle) {
                                 stillCurrent = false
                             } else {
                                 _status.value = _status.value.copy(
+                                    stateText = if (fullyCached) "Cached (peer transfers paused)" else _status.value.stateText,
                                     progressPercent = torrentStatus.progress() * 100f,
                                     downloadSpeedKbps = torrentStatus.downloadPayloadRate() / 1024,
                                     peers = torrentStatus.numPeers()
@@ -292,7 +341,7 @@ class TorrentStreamEngine(
                         )
                         break
                     }
-                    delay(1000L)
+                    delay(if (cachedTransfersPaused) 10000L else if (uiVisible) 1000L else 5000L)
                 }
             }
             telemetryJob = job
@@ -306,7 +355,8 @@ class TorrentStreamEngine(
     ): Pair<TorrentFileEntry, TorrentInputStream>? {
         val streamData = synchronized(stateLock) {
             val handle = activeHandle ?: return null
-            val info = activeTorrentInfo ?: return null
+            val pieceLength = activePieceLength
+            if (pieceLength <= 0) return null
             if (!safeIsValid(handle)) return null
 
             val entry = _status.value.files.getOrNull(fileIndex) ?: return null
@@ -321,7 +371,7 @@ class TorrentStreamEngine(
             StreamData(
                 entry = entry,
                 handle = handle,
-                info = info,
+                pieceLength = pieceLength,
                 targetFile = targetFile,
                 endByteOffset = readableEnd
             )
@@ -333,7 +383,7 @@ class TorrentStreamEngine(
                 targetFile = streamData.targetFile,
                 fileOffsetInTorrent = streamData.entry.offsetInTorrent,
                 fileLength = streamData.entry.sizeBytes,
-                pieceLength = streamData.info.pieceLength(),
+                pieceLength = streamData.pieceLength,
                 initialByteOffset = startByteOffset,
                 endByteOffset = streamData.endByteOffset
             )
@@ -354,7 +404,7 @@ class TorrentStreamEngine(
                 retiredHandle = activeHandle
                 val old = activeHandle
                 activeHandle = null
-                activeTorrentInfo = null
+                activePieceLength = 0
                 expectedInfoHash = null
                 _status.value = EngineStatus()
                 old
@@ -368,9 +418,12 @@ class TorrentStreamEngine(
         }
     }
 
-    fun resetSession(): Boolean = synchronized(sessionLock) {
+    fun resetSession() {
         stopSession()
-        startSession()
+    }
+
+    fun setUiVisible(visible: Boolean) {
+        uiVisible = visible
     }
 
     private fun beginLoad(stateText: String): Long {
@@ -384,7 +437,7 @@ class TorrentStreamEngine(
                 retiredHandle = activeHandle
                 val old = activeHandle
                 activeHandle = null
-                activeTorrentInfo = null
+                activePieceLength = 0
                 expectedInfoHash = null
                 _status.value = EngineStatus(stateText = stateText)
                 old
@@ -409,7 +462,7 @@ class TorrentStreamEngine(
             if (loadGeneration != generation) return
             val old = activeHandle
             activeHandle = null
-            activeTorrentInfo = null
+            activePieceLength = 0
             expectedInfoHash = null
             _status.value = EngineStatus(stateText = message)
             old
@@ -421,7 +474,7 @@ class TorrentStreamEngine(
         val shouldRemove = synchronized(stateLock) {
             if (loadGeneration != generation || activeHandle !== handle) return
             activeHandle = null
-            activeTorrentInfo = null
+            activePieceLength = 0
             expectedInfoHash = null
             _status.value = EngineStatus(stateText = message)
             true
@@ -488,7 +541,7 @@ class TorrentStreamEngine(
     private data class StreamData(
         val entry: TorrentFileEntry,
         val handle: TorrentHandle,
-        val info: TorrentInfo,
+        val pieceLength: Int,
         val targetFile: File,
         val endByteOffset: Long
     )
