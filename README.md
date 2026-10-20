@@ -1,5 +1,7 @@
 # TorrentToDDL
 
+<img src="branding/torrenttoddl-logo.svg" width="120" alt="TorrentToDDL logo">
+
 TorrentToDDL is an on-device Android torrent gateway. It resolves a magnet URI
 or opens a `.torrent` file, downloads pieces with libtorrent, and exposes the
 files as local HTTP direct-download links.
@@ -59,7 +61,7 @@ use the gateway only on a trusted network.
 
 Android requires an update to have the same application ID and signing
 certificate as the installed app, and a compatible version code. This project
-keeps `com.example.torrenttoddl` and now uses version code 6 (version 1.0.5).
+keeps `com.example.torrenttoddl` and now uses version code 7 (version 1.0.6).
 Increasing the version code does not fix a certificate mismatch.
 
 Fresh GitHub Actions runners generate different debug keystores by default.
@@ -151,3 +153,12 @@ cap. These are separate stages: already-cached data travels over loopback to
 Downloads and can move much faster than the current internet connection. A fast
 local save is not evidence of a faster swarm download. Completion/failure stays
 visible in the transfer history while the service remains bound.
+
+## Public releases
+
+Version tags such as `v1.0.6` trigger the Public Android Release workflow.
+Release lint, JVM tests, signing identity and the non-debuggable flag are checked
+before publishing a normal GitHub release marked Latest. Assets include
+`TorrentToDDL.apk`, `SHA256SUMS`, the public certificate report and the SVG logo.
+Missing signing secrets fail the release instead of generating a temporary key.
+Existing debug development builds remain available through the original workflow.

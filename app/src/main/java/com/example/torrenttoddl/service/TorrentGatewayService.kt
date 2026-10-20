@@ -276,7 +276,7 @@ class TorrentGatewayService : Service() {
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TorrentToDDL gateway running")
             .setContentText(if (active.isNotEmpty()) "${active.size} download(s) • ${bytes / 1024} KB received" else "Ready on port $SERVER_PORT • auto-stop when idle in background")
-            .setSmallIcon(android.R.drawable.stat_sys_download).setContentIntent(open)
+            .setSmallIcon(com.example.torrenttoddl.R.drawable.ic_launcher_monochrome).setContentIntent(open)
             .setProgress(100, if (total > 0) (bytes.toDouble() * 100 / total).toInt().coerceIn(0,100) else 0, active.isNotEmpty() && total <= 0)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop Gateway", stop)
             .setCategory(NotificationCompat.CATEGORY_SERVICE).setOnlyAlertOnce(true).setOngoing(true).build()

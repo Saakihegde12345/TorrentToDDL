@@ -652,9 +652,11 @@ fun TorrentConverterScreen(
         item(key = "brand") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(Lime), contentAlignment = Alignment.Center) {
-                        Text("T/", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Black)
-                    }
+                    androidx.compose.foundation.Image(
+                        painter = androidx.compose.ui.res.painterResource(R.drawable.ic_launcher_foreground),
+                        contentDescription = null,
+                        modifier = Modifier.size(44.dp).clip(RoundedCornerShape(12.dp)).background(Ink)
+                    )
                     Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
                         Text("TorrentToDDL", color = Paper, fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = (-.5).sp)
                         Eyebrow("THE ON-DEVICE GATEWAY")

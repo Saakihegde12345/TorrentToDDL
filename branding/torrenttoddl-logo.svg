@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 108 108">
+<title>TorrentToDDL</title>
+<rect width="108" height="108" fill="#0B0F13"/>
+<g transform="translate(54 52) scale(.88) translate(-54 -54)">
+<path d="M42,29 L29,36 L29,72 L54,86 L79,72 L79,36 L66,29" fill="none" stroke="#83DBE8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M36,25 L72,25 L72,35 L59,35 L59,53 L69,53 L54,69 L39,53 L49,53 L49,35 L36,35 Z" fill="#CEFA67"/>
+</g>
+</svg>

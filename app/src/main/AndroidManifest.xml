@@ -13,6 +13,8 @@
     <application
         android:allowBackup="true"
         android:label="TorrentToDDL"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:usesCleartextTraffic="true"
         android:theme="@android:style/Theme.Material.NoActionBar">
