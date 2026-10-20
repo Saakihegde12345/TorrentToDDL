@@ -11,8 +11,8 @@ android {
         applicationId = "com.example.torrenttoddl"
         minSdk = 26
         targetSdk = 34
-        versionCode = 2
-        versionName = "1.0.1"
+        versionCode = 3
+        versionName = "1.0.2"
 
         ndk {
             abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
@@ -55,4 +55,8 @@ dependencies {
     implementation("androidx.compose.ui:ui")
     implementation("androidx.compose.material3:material3")
     implementation("androidx.compose.ui:ui-tooling-preview")
+
+    testImplementation("junit:junit:4.13.2")
+    // Exercise real JNI handle lifetimes on Linux CI; not packaged in the APK.
+    testRuntimeOnly("org.libtorrent4j:libtorrent4j-linux:$libtorrent4jVersion")
 }
