@@ -51,6 +51,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
+import androidx.core.app.NotificationManagerCompat
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.material3.LinearProgressIndicator
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.layout.heightIn
+import com.example.torrenttoddl.service.GatewayState
 import androidx.lifecycle.lifecycleScope
 import com.example.torrenttoddl.engine.EngineStatus
 import com.example.torrenttoddl.engine.TorrentFileEntry
@@ -67,6 +74,7 @@ import kotlinx.coroutines.withContext
 
 class MainActivity : ComponentActivity() {
 
+    private var notificationsEnabled by mutableStateOf(true)
     private var gatewayService by mutableStateOf<TorrentGatewayService?>(null)
     private var initialMagnetFromIntent by mutableStateOf("")
     private var incomingError by mutableStateOf<String?>(null)
@@ -122,10 +130,28 @@ class MainActivity : ComponentActivity() {
 
                     if (service != null) {
                         val status by service.engine.status.collectAsState()
+                        val runtime by service.state.collectAsState()
+                        LaunchedEffect(runtime.running) {
+                            if (runtime.running) submitPendingInputIfPossible()
+                        }
+                        LaunchedEffect(runtime.errorSerial) {
+                            runtime.error?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
+                        }
+                        LaunchedEffect(incomingError) {
+                            incomingError?.let { Toast.makeText(this@MainActivity, it, Toast.LENGTH_LONG).show() }
+                        }
                         TorrentConverterScreen(
                             initialMagnet = initialMagnetFromIntent,
                             status = status,
                             incomingError = incomingError,
+                            gateway = runtime,
+                            notificationsEnabled = notificationsEnabled,
+                            onStartGateway = { startGateway() },
+                            onStopGateway = { service.stopGateway() },
+                            onEnableNotifications = {
+                                startActivity(Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS)
+                                    .putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName))
+                            },
                             onConvertMagnet = { magnet ->
                                 submitMagnet(magnet)
                             },
@@ -195,6 +221,12 @@ class MainActivity : ComponentActivity() {
     }
 
     private fun enqueueSystemDownload(url: String, fileName: String) {
+        val service = gatewayService
+        if (service == null || !service.state.value.running || service.state.value.changing) {
+            Toast.makeText(this, "Start the gateway before downloading", Toast.LENGTH_LONG).show()
+            return
+        }
+        service.markUserActivity()
         val safeFileName = fileName
             .substringAfterLast('/')
             .substringAfterLast('\\')
@@ -210,8 +242,9 @@ class MainActivity : ComponentActivity() {
 
             val dm = getSystemService(Context.DOWNLOAD_SERVICE) as DownloadManager
             dm.enqueue(request)
-        }.onSuccess {
-            Toast.makeText(this, "Enqueued in Android DownloadManager", Toast.LENGTH_SHORT).show()
+        }.onSuccess { id ->
+            service.trackDownload(id, safeFileName)
+            Toast.makeText(this, "Download queued; progress is shown in the app", Toast.LENGTH_SHORT).show()
         }.onFailure { error ->
             Toast.makeText(
                 this,
@@ -237,7 +270,6 @@ class MainActivity : ComponentActivity() {
     private fun startAndBindGatewayService() {
         val serviceIntent = Intent(this, TorrentGatewayService::class.java)
         try {
-            ContextCompat.startForegroundService(this, serviceIntent)
             serviceBound = bindService(serviceIntent, connection, Context.BIND_AUTO_CREATE)
             if (!serviceBound) {
                 incomingError = "Unable to connect to the local gateway service"
@@ -245,6 +277,31 @@ class MainActivity : ComponentActivity() {
         } catch (error: Exception) {
             incomingError = "Unable to start the local gateway service: ${errorText(error)}"
         }
+    }
+
+    private fun startGateway() {
+        requestNotificationPermissionIfNeeded()
+        runCatching {
+            ContextCompat.startForegroundService(this, Intent(this, TorrentGatewayService::class.java))
+        }.onFailure {
+            incomingError = "Unable to start gateway: ${errorText(it)}"
+            Toast.makeText(this, incomingError, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<out String>, grantResults: IntArray) {
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        if (requestCode == NOTIFICATION_PERMISSION_REQUEST_CODE) {
+            notificationsEnabled = gatewayNotificationsEnabled()
+            if (!notificationsEnabled) Toast.makeText(this, "Notifications are disabled. Enable them in app settings to see gateway progress.", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun gatewayNotificationsEnabled(): Boolean {
+        val manager = getSystemService(android.app.NotificationManager::class.java)
+        val channel = manager.getNotificationChannel(TorrentGatewayService.CHANNEL_ID)
+        return NotificationManagerCompat.from(this).areNotificationsEnabled() &&
+            (channel == null || channel.importance != android.app.NotificationManager.IMPORTANCE_NONE)
     }
 
     private fun requestNotificationPermissionIfNeeded() {
@@ -314,6 +371,16 @@ class MainActivity : ComponentActivity() {
         val service = gatewayService ?: return
         val input = pendingInput ?: return
         if (input.key == inFlightInputKey) return
+        if (!service.state.value.running || service.state.value.changing) {
+            if (!service.state.value.changing) startGateway()
+            return
+        }
+        if (service.state.value.downloads.any { !it.finished }) {
+            incomingError = "Stop current downloads before loading another torrent"
+            pendingInput = null
+            return
+        }
+        service.markUserActivity()
 
         if (input.magnet != null) {
             inFlightInputKey = input.key
@@ -394,6 +461,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        notificationsEnabled = gatewayNotificationsEnabled()
         gatewayService?.engine?.setUiVisible(true)
     }
 
@@ -486,7 +554,12 @@ fun TorrentConverterScreen(
     onDownloadWithSystemManager: (String, String) -> Unit,
     onOpenExternalApp: (String) -> Unit,
     incomingError: String? = null,
-    onReset: () -> Unit = {}
+    onReset: () -> Unit = {},
+    gateway: GatewayState = GatewayState(),
+    notificationsEnabled: Boolean = true,
+    onStartGateway: () -> Unit = {},
+    onStopGateway: () -> Unit = {},
+    onEnableNotifications: () -> Unit = {}
 ) {
     var magnetInput by remember(initialMagnet) { mutableStateOf(initialMagnet) }
     val lanIp = remember { LocalHttpStreamServer.getLocalLanIpAddress() }
@@ -502,6 +575,38 @@ fun TorrentConverterScreen(
             style = MaterialTheme.typography.headlineSmall
         )
 
+        Card(modifier = Modifier.fillMaxWidth()) {
+            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text(gateway.message)
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Button(onClick = onStartGateway, enabled = !gateway.running && !gateway.changing) { Text("Start Gateway") }
+                    OutlinedButton(onClick = onStopGateway, enabled = gateway.running && !gateway.changing) { Text("Stop Gateway") }
+                }
+                if (!notificationsEnabled) {
+                    Text("Notifications are disabled for TorrentToDDL.", color = MaterialTheme.colorScheme.error)
+                    OutlinedButton(onClick = onEnableNotifications) { Text("Enable notifications") }
+                }
+                if (gateway.downloads.isNotEmpty()) {
+                    Column(Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        gateway.downloads.forEach { download ->
+                            Text(download.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
+                            Text(download.message, color = if (download.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
+                            if (download.total > 0) {
+                                val progress = (download.bytes.toDouble() / download.total).toFloat().coerceIn(0f, 1f)
+                                LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
+                                Text("${"%.1f".format(Locale.US, progress * 100)}% • ${download.bytes / 1024} / ${download.total / 1024} KB")
+                            } else if (!download.finished) {
+                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
+                                Text("${download.bytes / 1024} KB received")
+                            }
+                        }
+                    }
+                    Text("Use Home to keep downloading. Back, Stop or Reset stops active transfers.", style = MaterialTheme.typography.bodySmall)
+                }
+                gateway.error?.let { Text(it, color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis) }
+            }
+        }
+
         OutlinedTextField(
             value = magnetInput,
             onValueChange = { magnetInput = it },
@@ -516,7 +621,7 @@ fun TorrentConverterScreen(
         ) {
             Button(
                 onClick = { onConvertMagnet(magnetInput.trim()) },
-                enabled = magnetInput.startsWith("magnet:", ignoreCase = true),
+                enabled = gateway.running && !gateway.changing && magnetInput.startsWith("magnet:", ignoreCase = true),
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Convert Magnet")
@@ -524,6 +629,7 @@ fun TorrentConverterScreen(
 
             OutlinedButton(
                 onClick = onPickTorrentFile,
+                enabled = gateway.running && !gateway.changing,
                 modifier = Modifier.weight(1f)
             ) {
                 Text("Pick .torrent File")
