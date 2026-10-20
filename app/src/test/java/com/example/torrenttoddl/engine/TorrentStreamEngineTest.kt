@@ -19,6 +19,16 @@ import org.junit.Test
 import org.libtorrent4j.SessionManager
 
 class TorrentStreamEngineTest {
+    @Test
+    fun cachePercentageUsesByteCountsAndHandlesUnknownTotals() {
+        // A file-check task can reach 100% with no payload downloaded.
+        assertEquals(0f, cachedPercent(0, 100, false), 0f)
+        assertEquals(25f, cachedPercent(25, 100, false), 0f)
+        assertEquals(0f, cachedPercent(0, 0, false), 0f)
+        assertEquals(100f, cachedPercent(0, 0, true), 0f)
+        assertEquals(100f, cachedPercent(120, 100, true), 0f)
+    }
+
     @Test(timeout = 30000)
     fun torrentHandleSurvivesAlertRecyclingAndResetStopsNetworking(): Unit = runBlocking {
         val root = Files.createTempDirectory("torrent-engine-test").toFile()
