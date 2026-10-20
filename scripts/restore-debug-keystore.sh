@@ -15,4 +15,7 @@ trap 'rm -f "$keystore_tmp"' EXIT
 printf '%s' "$DEBUG_KEYSTORE_BASE64" | base64 --decode > "$keystore_tmp"
 keytool -list -keystore "$keystore_tmp" -storepass android -alias androiddebugkey > /dev/null
 mv "$keystore_tmp" "$HOME/.android/debug.keystore"
+if [[ -n "${GITHUB_ENV:-}" ]]; then
+  printf 'TORRENTTODDL_DEBUG_KEYSTORE=%s\n' "$HOME/.android/debug.keystore" >> "$GITHUB_ENV"
+fi
 echo "Restored persistent debug signing key."
