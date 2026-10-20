@@ -20,6 +20,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 
 class TorrentGatewayService : Service() {
 
@@ -30,6 +31,7 @@ class TorrentGatewayService : Service() {
     private val binder = LocalBinder()
     private var foregroundActive = false
     private var lastMagnetRequest: String? = null
+    private var stopping = false
 
     inner class LocalBinder : Binder() {
         fun getService(): TorrentGatewayService = this@TorrentGatewayService
@@ -42,7 +44,6 @@ class TorrentGatewayService : Service() {
 
         val cacheDir = File(getExternalFilesDir(null) ?: filesDir, "torrent_cache").apply { mkdirs() }
         engine = TorrentStreamEngine(cacheDir, serviceScope)
-        engine.startSession()
 
         httpServer = LocalHttpStreamServer(SERVER_PORT, engine).apply {
             start(5000, false)
@@ -59,19 +60,18 @@ class TorrentGatewayService : Service() {
             ACTION_RESET_SERVICE -> {
                 promoteToForeground()
                 resetSession()
-                return START_STICKY
+                return START_NOT_STICKY
             }
         }
 
         if (!foregroundActive) promoteToForeground()
-        if (::engine.isInitialized) engine.startSession()
 
         val magnet = intent?.getStringExtra(EXTRA_MAGNET_URI)?.trim()
         if (!magnet.isNullOrBlank() && magnet != lastMagnetRequest) {
             lastMagnetRequest = magnet
             engine.resolveMagnetOrTorrent(magnet)
         }
-        return START_STICKY
+        return START_NOT_STICKY
     }
 
     override fun onBind(intent: Intent?): IBinder = binder
@@ -86,19 +86,34 @@ class TorrentGatewayService : Service() {
     }
 
     private fun stopGateway() {
+        if (stopping) return
+        stopping = true
+        val serverToStop = httpServer
+        httpServer = null
         serviceScope.launch(Dispatchers.IO) {
             if (::engine.isInitialized) engine.stopSession()
-            foregroundActive = false
-            stopForeground(STOP_FOREGROUND_REMOVE)
-            stopSelf()
+            serverToStop?.stop()
+            withContext(Dispatchers.Main) {
+                foregroundActive = false
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
+            }
         }
     }
 
     override fun onDestroy() {
-        httpServer?.stop()
+        val serverToStop = httpServer
         httpServer = null
-        if (::engine.isInitialized) engine.stopSession()
-        serviceScope.cancel()
+        // Native teardown joins its alert thread; never block Android's main
+        // thread, and keep this scope alive until cleanup has completed.
+        serviceScope.launch(Dispatchers.IO) {
+            try {
+                if (::engine.isInitialized) engine.stopSession()
+                serverToStop?.stop()
+            } finally {
+                serviceScope.cancel()
+            }
+        }
         foregroundActive = false
         super.onDestroy()
     }
