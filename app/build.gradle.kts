@@ -7,6 +7,17 @@ android {
     namespace = "com.example.torrenttoddl"
     compileSdk = 34
 
+    // Use the exact file restored by CI instead of AGP's environment-dependent
+    // default debug-keystore location. Local and PR builds keep their default.
+    providers.environmentVariable("TORRENTTODDL_DEBUG_KEYSTORE").orNull?.let { keystorePath ->
+        signingConfigs.getByName("debug") {
+            storeFile = file(keystorePath)
+            storePassword = "android"
+            keyAlias = "androiddebugkey"
+            keyPassword = "android"
+        }
+    }
+
     defaultConfig {
         applicationId = "com.example.torrenttoddl"
         minSdk = 26
