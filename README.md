@@ -11,7 +11,7 @@ files as local HTTP direct-download links.
    is available; the complete torrent does not need to finish first.
 3. Use the on-device URL with Android DownloadManager, or copy/open the LAN
    URL from another device on the same Wi-Fi or hotspot.
-4. Use **Reset Gateway** to stop the active torrent and start a fresh session.
+4. Use **Reset Gateway** to stop the active torrent. Loading another torrent starts a fresh session.
 
 The local HTTP gateway listens on port `8080` and supports normal downloads,
 HTTP byte ranges, open-ended ranges, and suffix ranges. The URL filename is
@@ -59,7 +59,7 @@ use the gateway only on a trusted network.
 
 Android requires an update to have the same application ID and signing
 certificate as the installed app, and a compatible version code. This project
-keeps `com.example.torrenttoddl` and now uses version code 2 (version 1.0.1).
+keeps `com.example.torrenttoddl` and now uses version code 3 (version 1.0.2).
 Increasing the version code does not fix a certificate mismatch.
 
 Fresh GitHub Actions runners generate different debug keystores by default.
@@ -96,3 +96,24 @@ The release publishing job has `contents: write` permission to create the
 release and attach the APK. It runs only after successful build checks, never
 for pull requests. Open the workflow run summary and click **Download
 TorrentToDDL.apk**, or find the same APK under the corresponding release Assets.
+
+## Gateway lifetime and battery use
+
+- Opening the app starts the HTTP gateway, but does not start torrent peer
+  discovery or DHT until you load a torrent or magnet.
+- Home / switching apps keeps an active transfer available in the background.
+  Status polling slows from once per second to once per five seconds.
+- Back closes the gateway task; swiping it out of Recents also stops the service.
+  The notification's **Stop Gateway** action stops torrent activity and HTTP serving.
+- **Reset Gateway** stops the native torrent session instead of immediately
+  restarting discovery. A later load starts it again.
+- Once the whole torrent is cached, peer transfers and discovery pause. Cached
+  files remain available through HTTP. Loading another torrent resumes networking.
+- The service does not automatically restart after Android terminates it.
+
+Active downloads still use network, CPU and storage; these lifecycle changes
+avoid unnecessary idle work, but are not a measured battery-life guarantee.
+
+The Linux JVM regression test uses the real libtorrent JNI runtime to verify
+that retained handles survive native alert recycling and reset/reload. Android
+device testing is still needed for UI, task-removal behavior and battery use.
