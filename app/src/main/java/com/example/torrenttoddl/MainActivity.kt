@@ -747,7 +747,7 @@ fun TorrentConverterScreen(
                         Text("${status.peers} peers", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
                     }
                 }
-                Text(status.stateText, color = Muted, fontSize = 11.sp)
+                Text("${sizeLabel(status.cachedBytes)} / ${sizeLabel(status.totalBytes)} · ${status.stateText}", color = Muted, fontSize = 11.sp)
                 Text("Internet → torrent cache. This can include data cached earlier.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
             }
         }
