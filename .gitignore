@@ -15,3 +15,6 @@ captures/
 *.jks
 *.keystore
 keystore.properties
+
+# Desktop preview packaging
+dist/

@@ -1,7 +1,7 @@
 package com.example.torrenttoddl.service
 
 /** Visible UI, queued downloads and live HTTP streams keep the gateway alive. */
-internal object GatewayIdlePolicy {
+object GatewayIdlePolicy {
     const val IDLE_MS = 30_000L
     const val STALL_MS = 180_000L
 

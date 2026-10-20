@@ -13,7 +13,6 @@ import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
-import org.junit.Assume.assumeTrue
 import org.junit.BeforeClass
 import org.junit.Test
 import org.libtorrent4j.SessionManager
@@ -29,7 +28,7 @@ class TorrentStreamEngineTest {
         assertEquals(100f, cachedPercent(120, 100, true), 0f)
     }
 
-    @Test(timeout = 30000)
+    @Test(timeout = 60000)
     fun torrentHandleSurvivesAlertRecyclingAndResetStopsNetworking(): Unit = runBlocking {
         val root = Files.createTempDirectory("torrent-engine-test").toFile()
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
@@ -42,6 +41,11 @@ class TorrentStreamEngineTest {
             val metadata = torrentMetadata(payload)
             engine.loadTorrentBytes(metadata)
             withTimeout(10000L) { engine.status.first { it.isReadyForDdl } }
+            withTimeout(10000L) { engine.status.first { it.cachedBytes >= payload.size } }
+            val full = engine.openFileStream(0, 0L)?.second ?: error("Cached file unavailable")
+            org.junit.Assert.assertArrayEquals(payload, full.use { it.readBytes() })
+            val range = engine.openFileStream(0, 2L, 7L)?.second ?: error("Cached range unavailable")
+            org.junit.Assert.assertArrayEquals(payload.copyOfRange(2, 7), range.use { it.readBytes() })
 
             // The alert's borrowed handle is freed/reused by later alert batches.
             // Exercise the retained handle after several batches and GC cycles.
@@ -76,19 +80,8 @@ class TorrentStreamEngineTest {
     companion object {
         @JvmStatic
         @BeforeClass
-        fun loadLinuxNativeLibrary() {
-            assumeTrue(System.getProperty("os.name").startsWith("Linux"))
-            assumeTrue(System.getProperty("os.arch") in setOf("amd64", "x86_64"))
-            // Android and Linux jars expose the same resource path. Select the
-            // Linux jar explicitly instead of loading an Android ELF into a JVM.
-            val resourceUrl = java.util.Collections.list(
-                TorrentStreamEngineTest::class.java.classLoader!!.getResources("lib/x86_64/libtorrent4j.so")
-            ).firstOrNull { it.toExternalForm().contains("libtorrent4j-linux-") }
-                ?: error("Linux JNI test runtime is missing")
-            val library = Files.createTempFile("libtorrent4j-test", ".so").toFile()
-            library.deleteOnExit()
-            resourceUrl.openStream().use { input -> library.outputStream().use { input.copyTo(it) } }
-            System.setProperty("libtorrent4j.jni.path", library.absolutePath)
+        fun loadDesktopNativeLibrary() {
+            com.example.torrenttoddl.desktop.DesktopNativeLibrary.load()
         }
     }
 }

@@ -1,0 +1,130 @@
+name: Desktop Preview
+
+on:
+  push:
+    branches: [main, desktop-compatibility]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android:
+    name: Android regression check
+    runs-on: ubuntu-22.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.5"
+      - run: gradle :app:lintDebug :app:testDebugUnitTest :app:assembleDebug :core:test --no-daemon --stacktrace
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-android-regression-reports
+          path: |
+            app/build/reports/
+            core/build/reports/
+          if-no-files-found: warn
+
+  build:
+    name: ${{ matrix.host }} x64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 40
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - host: linux
+            runner: ubuntu-22.04
+          - host: windows
+            runner: windows-2022
+          - host: macos
+            runner: macos-15-intel
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          architecture: x64
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: "8.5"
+      - name: Add Windows installer tools to PATH
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $paths = @("$env:WIX\bin", "${env:ProgramFiles(x86)}\WiX Toolset v3.14\bin")
+          foreach ($candidate in $paths) {
+            if (Test-Path "$candidate\candle.exe") { $candidate | Out-File -FilePath $env:GITHUB_PATH -Append; break }
+          }
+      - name: Test native engine and build bundled app and installer
+        run: gradle -PdesktopOnly=true :core:test :desktop:test :desktop:smokeTest :desktop:createDistributable :desktop:packageDistributionForCurrentOS --no-daemon --stacktrace
+      - name: Verify packaged launcher and collect installer
+        run: python scripts/verify-desktop-package.py ${{ matrix.host }}
+      - uses: actions/upload-artifact@v4
+        with:
+          name: desktop-${{ matrix.host }}-x64
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: desktop-${{ matrix.host }}-reports
+          path: |
+            core/build/reports/
+            desktop/build/reports/
+            desktop/build/compose/logs/
+          if-no-files-found: warn
+
+  publish:
+    name: Publish direct desktop preview downloads
+    needs: [android, build]
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: desktop-*-x64
+          merge-multiple: true
+          path: installers
+      - name: Publish preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+          PREVIEW_TAG: desktop-preview-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test -s installers/TorrentToDDL-linux-x64.deb
+          test -s installers/TorrentToDDL-windows-x64.msi
+          test -s installers/TorrentToDDL-macos-x64.dmg
+          (cd installers && sha256sum TorrentToDDL-* > SHA256SUMS)
+          cat > notes.md <<'NOTES'
+          Desktop preview for Windows x64, Intel macOS and Linux x64.
+          Download the installer for your operating system directly under Assets.
+          These preview installers are unsigned and macOS is not notarized.
+          Native Apple Silicon, ARM Linux, iOS and browser clients are not included.
+          The existing Android stable release remains available.
+          Use LAN sharing only on a trusted network. Report device-specific issues.
+          NOTES
+          gh release create "$PREVIEW_TAG" installers/* --target "$BUILD_SHA" \
+            --title "TorrentToDDL Desktop Preview" --notes-file notes.md --prerelease --latest=false
+          printf 'Desktop preview: %s/%s/releases/tag/%s\n' "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$PREVIEW_TAG" >> "$GITHUB_STEP_SUMMARY"

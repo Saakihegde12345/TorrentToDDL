@@ -14,4 +14,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "TorrentToDDL"
-include(":app")
+include(":core", ":desktop")
+if (providers.gradleProperty("desktopOnly").orNull != "true") include(":app")

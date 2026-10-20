@@ -171,6 +171,27 @@ version number cannot fix a signing-certificate mismatch.
 
 </details>
 
+## Desktop preview · in development
+
+The shared Kotlin engine now has a Compose Desktop interface. The preview build
+targets **Windows x64**, **Intel macOS** and **Linux x64**; Android remains supported.
+
+| Platform | Preview installer |
+| :--- | :--- |
+| Windows x64 | `TorrentToDDL-windows-x64.msi` |
+| Intel macOS | `TorrentToDDL-macos-x64.dmg` |
+| Debian / Ubuntu x64 | `TorrentToDDL-linux-x64.deb` |
+
+[Desktop build status](https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/build-desktop.yml)
+· [Preview releases](https://github.com/Saakihegde12345/TorrentToDDL/releases)
+· [Desktop setup, behavior and limitations](docs/desktop.md)
+
+The workflow publishes direct installer assets only after desktop native tests,
+packaged-launcher checks and the Android regression build pass. Desktop installers
+are experimental and unsigned; macOS is not notarized. Native Apple Silicon,
+iOS and browser clients are not included. Interactive desktop testing is still
+required before a stable desktop release.
+
 ## Under the hood
 
 | Layer | Implementation |
@@ -193,7 +214,7 @@ The project requires JDK 17 and Android SDK 34. From the project root, use the
 same checks as CI:
 
 ```text
-gradle lintDebug check assembleDebug --no-daemon
+gradle :app:lintDebug :app:check :core:test :app:assembleDebug --no-daemon
 ```
 
 The app targets Android 34 and requires Android 8.0 (API 26) or newer. It uses

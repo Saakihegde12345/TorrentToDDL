@@ -64,12 +64,11 @@ android {
 
 dependencies {
     val libtorrent4jVersion = "2.1.0-31"
-    implementation("org.libtorrent4j:libtorrent4j:$libtorrent4jVersion")
+    implementation(project(":core"))
     implementation("org.libtorrent4j:libtorrent4j-android-arm64:$libtorrent4jVersion")
     implementation("org.libtorrent4j:libtorrent4j-android-arm:$libtorrent4jVersion")
     implementation("org.libtorrent4j:libtorrent4j-android-x86_64:$libtorrent4jVersion")
 
-    implementation("org.nanohttpd:nanohttpd:2.3.1")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.0")
     implementation("androidx.core:core-ktx:1.12.0")
@@ -82,6 +81,4 @@ dependencies {
     implementation("androidx.compose.ui:ui-tooling-preview")
 
     testImplementation("junit:junit:4.13.2")
-    // Exercise real JNI handle lifetimes on Linux CI; not packaged in the APK.
-    testRuntimeOnly("org.libtorrent4j:libtorrent4j-linux:$libtorrent4jVersion")
 }

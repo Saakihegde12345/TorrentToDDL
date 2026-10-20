@@ -56,7 +56,7 @@ jobs:
         run: |
           set -euo pipefail
           test -s "$TORRENTTODDL_DEBUG_KEYSTORE"
-          gradle lintRelease testReleaseUnitTest assembleRelease --no-daemon --stacktrace
+          gradle :app:lintRelease :app:testReleaseUnitTest :core:test :app:assembleRelease --no-daemon --stacktrace
           cp app/build/outputs/apk/release/app-release.apk TorrentToDDL.apk
 
       - name: Verify public APK
@@ -93,6 +93,8 @@ jobs:
           path: |
             app/build/reports/**
             app/build/test-results/**
+            core/build/reports/**
+            core/build/test-results/**
             apk-metadata.txt
           if-no-files-found: warn
 

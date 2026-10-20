@@ -48,10 +48,10 @@ jobs:
           set -euo pipefail
           if [[ -f ./gradlew ]]; then
             echo "Using the committed Gradle wrapper."
-            bash ./gradlew lintDebug check --no-daemon --stacktrace
+            bash ./gradlew :app:lintDebug :app:check :core:test --no-daemon --stacktrace
           else
             echo "::warning::No Gradle wrapper found; using Gradle 8.5 provisioned by gradle/actions/setup-gradle."
-            gradle lintDebug check --no-daemon --stacktrace
+            gradle :app:lintDebug :app:check :core:test --no-daemon --stacktrace
           fi
 
       - name: Build debug APK
@@ -60,9 +60,9 @@ jobs:
         run: |
           set -euo pipefail
           if [[ -f ./gradlew ]]; then
-            bash ./gradlew assembleDebug --no-daemon --stacktrace
+            bash ./gradlew :app:assembleDebug --no-daemon --stacktrace
           else
-            gradle assembleDebug --no-daemon --stacktrace
+            gradle :app:assembleDebug --no-daemon --stacktrace
           fi
 
       - name: Record APK signing certificate
@@ -104,6 +104,8 @@ jobs:
             app/build/reports/**
             app/build/test-results/**
             app/build/outputs/logs/**
+            core/build/reports/**
+            core/build/test-results/**
             build/reports/**
             build/test-results/**
             apk-signing-certificate.txt
