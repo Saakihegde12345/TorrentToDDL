@@ -6,7 +6,7 @@ files as local HTTP direct-download links.
 
 ## User flow
 
-1. Start the app and paste a `magnet:` URI, or choose a `.torrent` file.
+1. Press **Start Gateway**, then paste a `magnet:` URI or choose a `.torrent` file.
 2. Wait for torrent metadata. The app lists the files as soon as the metadata
    is available; the complete torrent does not need to finish first.
 3. Use the on-device URL with Android DownloadManager, or copy/open the LAN
@@ -59,7 +59,7 @@ use the gateway only on a trusted network.
 
 Android requires an update to have the same application ID and signing
 certificate as the installed app, and a compatible version code. This project
-keeps `com.example.torrenttoddl` and now uses version code 3 (version 1.0.2).
+keeps `com.example.torrenttoddl` and now uses version code 4 (version 1.0.3).
 Increasing the version code does not fix a certificate mismatch.
 
 Fresh GitHub Actions runners generate different debug keystores by default.
@@ -97,23 +97,36 @@ release and attach the APK. It runs only after successful build checks, never
 for pull requests. Open the workflow run summary and click **Download
 TorrentToDDL.apk**, or find the same APK under the corresponding release Assets.
 
-## Gateway lifetime and battery use
+## Gateway lifetime, downloads and battery use
 
-- Opening the app starts the HTTP gateway, but does not start torrent peer
-  discovery or DHT until you load a torrent or magnet.
-- Home / switching apps keeps an active transfer available in the background.
-  Status polling slows from once per second to once per five seconds.
-- Back closes the gateway task; swiping it out of Recents also stops the service.
-  The notification's **Stop Gateway** action stops torrent activity and HTTP serving.
-- **Reset Gateway** stops the native torrent session instead of immediately
-  restarting discovery. A later load starts it again.
-- Once the whole torrent is cached, peer transfers and discovery pause. Cached
-  files remain available through HTTP. Loading another torrent resumes networking.
-- The service does not automatically restart after Android terminates it.
+- The app opens with the gateway off. **Start Gateway** starts the foreground
+  service and HTTP listener; **Stop Gateway** stops networking and cancels
+  unfinished downloads started through this app. Opening an incoming torrent
+  or magnet also starts the gateway.
+- An unused gateway stops after 30 seconds. Metadata resolution gets up to
+  three minutes. Queued downloads and active HTTP streams keep it alive.
+- In-app downloads display Android DownloadManager's received bytes, percentage,
+  waiting state and completion/failure reason. Errors also produce a toast.
+  Results remain visible while the app is bound, after the gateway auto-stops.
+- Once all in-app transfers finish and HTTP streams close, the gateway stops.
+  External HTTP clients get a 30-second gap between requests before idle-stop.
+- A managed download with no byte progress for three minutes is cancelled with
+  an error. Individual torrent stream waits are bounded at two minutes.
+- Home keeps downloads running. Back, removal from Recents, Stop and Reset stop
+  the gateway. Reset requires Start before another load. Native teardown runs
+  off the Android main thread. The service does not restart itself after being killed.
+- Allow notifications to see the gateway notification. If app or channel
+  notifications are blocked, the app shows **Enable notifications**, which opens
+  Android settings. Denial does not prevent Android from running a foreground
+  service, but can hide its notification from the drawer.
+- HTTP responses carry a stable torrent/file ETag and accept matching If-Match
+  range requests so interrupted Android downloads can resume without mixing
+  bytes from another torrent. Sparse swarms can still stall or fail; the app
+  now displays the Android failure reason.
+- Once cached, peer transfers and discovery pause until another explicit load.
 
-Active downloads still use network, CPU and storage; these lifecycle changes
-avoid unnecessary idle work, but are not a measured battery-life guarantee.
-
-The Linux JVM regression test uses the real libtorrent JNI runtime to verify
-that retained handles survive native alert recycling and reset/reload. Android
-device testing is still needed for UI, task-removal behavior and battery use.
+The JVM tests exercise real HTTP download/resume, stale torrent rejection,
+idle policy and native libtorrent handle recycling/reset. Android device testing
+is still needed for notification settings, task behavior, actual torrents and
+battery consumption. Active downloads use network, CPU and storage; no measured
+battery-life improvement is claimed.
