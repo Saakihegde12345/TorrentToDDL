@@ -47,6 +47,7 @@
             android:name=".service.TorrentGatewayService"
             android:enabled="true"
             android:exported="false"
+            android:stopWithTask="true"
             android:foregroundServiceType="dataSync" />
     </application>
 </manifest>
