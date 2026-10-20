@@ -59,7 +59,7 @@ use the gateway only on a trusted network.
 
 Android requires an update to have the same application ID and signing
 certificate as the installed app, and a compatible version code. This project
-keeps `com.example.torrenttoddl` and now uses version code 4 (version 1.0.3).
+keeps `com.example.torrenttoddl` and now uses version code 5 (version 1.0.4).
 Increasing the version code does not fix a certificate mismatch.
 
 Fresh GitHub Actions runners generate different debug keystores by default.
@@ -130,3 +130,19 @@ idle policy and native libtorrent handle recycling/reset. Android device testing
 is still needed for notification settings, task behavior, actual torrents and
 battery consumption. Active downloads use network, CPU and storage; no measured
 battery-life improvement is claimed.
+
+## Reading progress
+
+The dark graphite interface uses lime for gateway controls/local saves and cyan
+for torrent caching. All sections share one scrolling list, so files and controls
+remain accessible on smaller screens and with the keyboard open. Direct URLs
+are expandable rather than filling every file card.
+
+**Torrent cache** shows libtorrent's reported cache percentage, peer count and
+payload receive rate. **Saving to Downloads / Local save** shows actual Android
+DownloadManager byte counts and total length. Its rate is calculated from byte
+differences over elapsed monotonic time; there is no simulated progress or speed
+cap. These are separate stages: already-cached data travels over loopback to
+Downloads and can move much faster than the current internet connection. A fast
+local save is not evidence of a faster swarm download. Completion/failure stays
+visible in the transfer history while the service remains bound.
