@@ -40,7 +40,9 @@ data class EngineStatus(
     val peers: Int = 0,
     val files: List<TorrentFileEntry> = emptyList(),
     val isReadyForDdl: Boolean = false,
-    val infoHash: String = ""
+    val infoHash: String = "",
+    val cachedBytes: Long = 0L,
+    val totalBytes: Long = 0L
 )
 
 interface TorrentFileSource {
@@ -308,7 +310,12 @@ class TorrentStreamEngine(
 
                     try {
                         val torrentStatus = handle.status()
-                        val fullyCached = torrentStatus.progress() >= 1f
+                        // progress() also measures file-checking tasks. Use payload
+                        // counters for the cache meter, and seeding state for pausing.
+                        val cachedBytes = torrentStatus.totalWantedDone().coerceAtLeast(0L)
+                        val totalBytes = torrentStatus.totalWanted().coerceAtLeast(0L)
+                        val fullyCached = torrentStatus.isSeeding
+                        val cachePercent = cachedPercent(cachedBytes, totalBytes, fullyCached)
                         if (fullyCached && !cachedTransfersPaused) {
                             synchronized(sessionLock) {
                                 if (!isCurrentGeneration(generation)) return@launch
@@ -334,7 +341,9 @@ class TorrentStreamEngine(
                             } else {
                                 _status.value = _status.value.copy(
                                     stateText = if (fullyCached) "Cached (peer transfers paused)" else _status.value.stateText,
-                                    progressPercent = torrentStatus.progress() * 100f,
+                                    progressPercent = cachePercent,
+                                    cachedBytes = cachedBytes,
+                                    totalBytes = totalBytes,
                                     downloadSpeedKbps = torrentStatus.downloadPayloadRate() / 1024,
                                     peers = torrentStatus.numPeers()
                                 )
@@ -558,3 +567,8 @@ class TorrentStreamEngine(
         private const val MAGNET_METADATA_TIMEOUT_SECONDS = 60
     }
 }
+
+// Never use libtorrent's current-task progress as downloaded-byte progress.
+internal fun cachedPercent(cachedBytes: Long, totalBytes: Long, seeding: Boolean): Float =
+    if (totalBytes > 0) (cachedBytes.coerceAtLeast(0L).toDouble() * 100.0 / totalBytes).toFloat().coerceIn(0f, 100f)
+    else if (seeding) 100f else 0f
