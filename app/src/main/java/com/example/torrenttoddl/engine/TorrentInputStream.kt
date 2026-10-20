@@ -74,7 +74,11 @@ class TorrentInputStream(
             prioritizeWindow(byteOffsetInFile)
         }
 
+        val waitStarted = System.nanoTime()
         while (!closed && isHandleValid() && !hasPiece(pieceIndex)) {
+            if (System.nanoTime() - waitStarted > 120_000_000_000L) {
+                throw IOException("No torrent data received for 120 seconds. Check peers and retry.")
+            }
             if (!sleepBriefly(150L)) return false
         }
         return !closed && isHandleValid() && hasPiece(pieceIndex)
@@ -83,7 +87,11 @@ class TorrentInputStream(
     private fun ensureRandomAccessFile(): RandomAccessFile? {
         raf?.let { return it }
 
+        val waitStarted = System.nanoTime()
         while (!closed && isHandleValid() && !targetFile.exists()) {
+            if (System.nanoTime() - waitStarted > 120_000_000_000L) {
+                throw IOException("Torrent data is not available on disk")
+            }
             if (!sleepBriefly(100L)) return null
         }
         if (closed || !isHandleValid() || !targetFile.exists()) return null
@@ -114,7 +122,7 @@ class TorrentInputStream(
         if (fileLength <= 0L || pieceLength <= 0) return -1
 
         if (!waitForPieceAt(currentOffsetInFile)) {
-            return -1
+            throw IOException("Gateway stopped or torrent is no longer available")
         }
 
         val globalOffset = addOffsets(fileOffsetInTorrent, currentOffsetInFile) ?: return -1
