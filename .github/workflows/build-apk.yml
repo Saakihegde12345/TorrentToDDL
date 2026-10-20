@@ -71,6 +71,15 @@ jobs:
           set -euo pipefail
           apksigner_path=$(find "$ANDROID_HOME/build-tools" -name apksigner -type f | sort -V | tail -n 1)
           "$apksigner_path" verify --verbose --print-certs app/build/outputs/apk/debug/app-debug.apk | tee apk-signing-certificate.txt
+          if [[ -n "${TORRENTTODDL_DEBUG_KEYSTORE:-}" ]]; then
+            expected_cert=$(keytool -exportcert -keystore "$TORRENTTODDL_DEBUG_KEYSTORE" -storepass android -alias androiddebugkey | sha256sum | awk '{print $1}')
+            actual_cert=$(sed -n 's/.*certificate SHA-256 digest: //p' apk-signing-certificate.txt | tr '[:upper:]' '[:lower:]')
+            if [[ "$actual_cert" != "$expected_cert" ]]; then
+              echo "::error::APK signing certificate does not match the persistent keystore."
+              exit 1
+            fi
+            echo "Verified APK certificate matches the persistent signing key: $expected_cert"
+          fi
 
       - name: Name APK
         if: ${{ !cancelled() && steps.apk.outcome == 'success' }}
