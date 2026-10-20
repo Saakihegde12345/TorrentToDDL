@@ -1,7 +1,11 @@
 package com.example.torrenttoddl.server
 
 import com.example.torrenttoddl.engine.TorrentFileEntry
-import com.example.torrenttoddl.engine.TorrentStreamEngine
+import com.example.torrenttoddl.engine.TorrentFileSource
+import java.io.FilterInputStream
+import java.io.InputStream
+import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicInteger
 import fi.iki.elonen.NanoHTTPD
 import java.net.Inet4Address
 import java.net.NetworkInterface
@@ -9,8 +13,26 @@ import java.net.URLConnection
 
 class LocalHttpStreamServer(
     port: Int = 8080,
-    private val engine: TorrentStreamEngine
+    private val engine: TorrentFileSource
 ) : NanoHTTPD(port) {
+
+    private val streams = AtomicInteger()
+    val activeStreams: Int get() = streams.get()
+    private val served = AtomicBoolean()
+    val hasServedDownload: Boolean get() = served.get()
+
+    private fun track(input: InputStream): InputStream {
+        streams.incrementAndGet()
+        served.set(true)
+        return object : FilterInputStream(input) {
+            private val released = AtomicBoolean()
+            override fun close() {
+                try { super.close() } finally {
+                    if (released.compareAndSet(false, true)) streams.decrementAndGet()
+                }
+            }
+        }
+    }
 
     override fun serve(session: IHTTPSession): Response {
         val uri = session.uri ?: return textResponse(
@@ -49,6 +71,12 @@ class LocalHttpStreamServer(
             return textResponse(Response.Status.SERVICE_UNAVAILABLE, "Invalid torrent file size")
         }
 
+        val etag = "\"${engineStatus.infoHash}-${fileEntry.index}\""
+        val ifMatch = headerValue(session, "if-match")
+        if (ifMatch != null && ifMatch.trim() != "*" && ifMatch.split(',').none { it.trim() == etag }) {
+            return textResponse(Response.Status.PRECONDITION_FAILED, "Torrent changed; start a new download")
+        }
+
         val rangeHeader = headerValue(session, "range")
         val requestedRange = if (rangeHeader == null) {
             null
@@ -85,9 +113,13 @@ class LocalHttpStreamServer(
         return newFixedLengthResponse(
             if (requestedRange == null) Response.Status.OK else Response.Status.PARTIAL_CONTENT,
             mimeType,
-            torrentInputStream,
+            if (session.method == Method.HEAD) {
+                torrentInputStream.close()
+                java.io.ByteArrayInputStream(byteArrayOf())
+            } else track(torrentInputStream),
             contentLength
         ).apply {
+            addHeader("ETag", etag)
             addHeader("Accept-Ranges", "bytes")
             addHeader("Content-Length", contentLength.toString())
             if (requestedRange != null) {
