@@ -17,6 +17,7 @@ import android.os.Environment
 import android.os.IBinder
 import android.widget.Toast
 import androidx.activity.ComponentActivity
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
 import androidx.activity.result.contract.ActivityResultContracts
@@ -81,6 +82,7 @@ class MainActivity : ComponentActivity() {
             val binder = service as? TorrentGatewayService.LocalBinder ?: return
             serviceBound = true
             gatewayService = binder.getService()
+            gatewayService?.engine?.setUiVisible(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
             submitPendingInputIfPossible()
         }
 
@@ -92,6 +94,11 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                finishAndRemoveTask()
+            }
+        })
 
         lastHandledIntentKey = savedInstanceState?.getString(STATE_LAST_INTENT_KEY)
         initialMagnetFromIntent = savedInstanceState?.getString(STATE_MAGNET).orEmpty()
@@ -385,11 +392,24 @@ class MainActivity : ComponentActivity() {
         gatewayService?.resetSession()
     }
 
+    override fun onStart() {
+        super.onStart()
+        gatewayService?.engine?.setUiVisible(true)
+    }
+
+    override fun onStop() {
+        gatewayService?.engine?.setUiVisible(false)
+        super.onStop()
+    }
+
     override fun onDestroy() {
         pendingTorrentReadJob?.cancel()
         if (serviceBound) {
             runCatching { unbindService(connection) }
             serviceBound = false
+        }
+        if (isFinishing && !isChangingConfigurations) {
+            stopService(Intent(this, TorrentGatewayService::class.java))
         }
         super.onDestroy()
     }
