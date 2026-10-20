@@ -138,8 +138,9 @@ for torrent caching. All sections share one scrolling list, so files and control
 remain accessible on smaller screens and with the keyboard open. Direct URLs
 are expandable rather than filling every file card.
 
-**Torrent cache** shows libtorrent's reported cache percentage, peer count and
-payload receive rate. **Saving to Downloads / Local save** shows actual Android
+**Torrent cache** shows the wanted payload bytes present versus wanted bytes,
+peer count and payload receive rate. File-checking task progress is not used as
+download progress, and automatic pause requires the completed/seeding state. **Saving to Downloads / Local save** shows actual Android
 DownloadManager byte counts and total length. Its rate is calculated from byte
 differences over elapsed monotonic time; there is no simulated progress or speed
 cap. These are separate stages: already-cached data travels over loopback to
