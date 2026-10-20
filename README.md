@@ -59,7 +59,7 @@ use the gateway only on a trusted network.
 
 Android requires an update to have the same application ID and signing
 certificate as the installed app, and a compatible version code. This project
-keeps `com.example.torrenttoddl` and now uses version code 5 (version 1.0.4).
+keeps `com.example.torrenttoddl` and now uses version code 6 (version 1.0.5).
 Increasing the version code does not fix a certificate mismatch.
 
 Fresh GitHub Actions runners generate different debug keystores by default.
@@ -103,13 +103,17 @@ TorrentToDDL.apk**, or find the same APK under the corresponding release Assets.
   service and HTTP listener; **Stop Gateway** stops networking and cancels
   unfinished downloads started through this app. Opening an incoming torrent
   or magnet also starts the gateway.
-- An unused gateway stops after 30 seconds. Metadata resolution gets up to
-  three minutes. Queued downloads and active HTTP streams keep it alive.
+- While the app is visible, the gateway stays on even if idle, fully cached,
+  or all saves have finished. Stop and Reset still work immediately.
+- After backgrounding, an unused gateway gets a fresh 30-second idle window.
+  Metadata resolution gets up to three minutes. Queued downloads and active
+  HTTP streams keep it alive.
 - In-app downloads display Android DownloadManager's received bytes, percentage,
   waiting state and completion/failure reason. Errors also produce a toast.
   Results remain visible while the app is bound, after the gateway auto-stops.
-- Once all in-app transfers finish and HTTP streams close, the gateway stops.
-  External HTTP clients get a 30-second gap between requests before idle-stop.
+- In the background, once all in-app transfers finish and HTTP streams close,
+  the gateway stops. External HTTP clients get a 30-second gap between requests
+  before idle-stop.
 - A managed download with no byte progress for three minutes is cancelled with
   an error. Individual torrent stream waits are bounded at two minutes.
 - Home keeps downloads running. Back, removal from Recents, Stop and Reset stop

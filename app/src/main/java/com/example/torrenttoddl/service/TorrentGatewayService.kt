@@ -52,6 +52,7 @@ class TorrentGatewayService : Service() {
     private var httpServer: LocalHttpStreamServer? = null
     private var monitorJob: Job? = null
     private var foregroundActive = false
+    private var uiVisible = false
     private var lastActivity = 0L
     private var hadTransfer = false
     private val binder = LocalBinder()
@@ -107,7 +108,7 @@ class TorrentGatewayService : Service() {
                     }
                     lastActivity = SystemClock.elapsedRealtime()
                     hadTransfer = false
-                    _state.update { it.copy(running = true, changing = false, message = "Gateway ready (auto-stop after 30 seconds idle)") }
+                    _state.update { it.copy(running = true, changing = false, message = "Gateway ready (auto-stop when idle in background)") }
                     monitorJob = serviceScope.launch { monitorGateway() }
                 } catch (error: Exception) {
                     _state.update { it.copy(running = false, changing = false, message = "Gateway start failed") }
@@ -118,6 +119,12 @@ class TorrentGatewayService : Service() {
                 }
             }
         }
+    }
+
+    fun setUiVisible(visible: Boolean) {
+        if (uiVisible != visible) markUserActivity()
+        uiVisible = visible
+        engine.setUiVisible(visible)
     }
 
     fun markUserActivity() { lastActivity = SystemClock.elapsedRealtime() }
@@ -190,13 +197,14 @@ class TorrentGatewayService : Service() {
             val activeStreams = server?.activeStreams ?: 0
             if (activeStreams > 0) lastActivity = now
             val loading = engine.status.value.stateText.let { it.startsWith("Loading") || it.startsWith("Fetching") }
-            if (!activeDownloads && activeStreams == 0 && hadTransfer) {
-                stopGateway("Transfers finished; gateway stopped automatically")
-                return
-            }
-            if (GatewayIdlePolicy.shouldStop(now - lastActivity, loading, activeDownloads, activeStreams)) {
-                if (loading) reportError("Torrent metadata timed out; check the magnet and available peers")
-                stopGateway("No active downloads; gateway stopped automatically")
+            val transfersFinished = hadTransfer && !activeDownloads && activeStreams == 0
+            if (GatewayIdlePolicy.shouldStop(
+                    now - lastActivity, loading, activeDownloads, activeStreams,
+                    uiVisible = uiVisible, transfersFinished = transfersFinished
+                )) {
+                if (loading && !transfersFinished) reportError("Torrent metadata timed out; check the magnet and available peers")
+                stopGateway(if (transfersFinished) "Transfers finished; gateway stopped automatically"
+                    else "No active downloads; gateway stopped automatically")
                 return
             }
             updateNotification()
@@ -267,7 +275,7 @@ class TorrentGatewayService : Service() {
         val bytes = active.sumOf { it.bytes }
         return NotificationCompat.Builder(this, CHANNEL_ID)
             .setContentTitle("TorrentToDDL gateway running")
-            .setContentText(if (active.isNotEmpty()) "${active.size} download(s) • ${bytes / 1024} KB received" else "Ready on port $SERVER_PORT • auto-stop when idle")
+            .setContentText(if (active.isNotEmpty()) "${active.size} download(s) • ${bytes / 1024} KB received" else "Ready on port $SERVER_PORT • auto-stop when idle in background")
             .setSmallIcon(android.R.drawable.stat_sys_download).setContentIntent(open)
             .setProgress(100, if (total > 0) (bytes.toDouble() * 100 / total).toInt().coerceIn(0,100) else 0, active.isNotEmpty() && total <= 0)
             .addAction(android.R.drawable.ic_menu_close_clear_cancel, "Stop Gateway", stop)

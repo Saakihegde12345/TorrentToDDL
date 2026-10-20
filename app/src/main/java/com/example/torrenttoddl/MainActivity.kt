@@ -99,7 +99,7 @@ class MainActivity : ComponentActivity() {
             val binder = service as? TorrentGatewayService.LocalBinder ?: return
             serviceBound = true
             gatewayService = binder.getService()
-            gatewayService?.engine?.setUiVisible(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
+            gatewayService?.setUiVisible(lifecycle.currentState.isAtLeast(androidx.lifecycle.Lifecycle.State.STARTED))
             submitPendingInputIfPossible()
         }
 
@@ -477,11 +477,11 @@ class MainActivity : ComponentActivity() {
     override fun onStart() {
         super.onStart()
         notificationsEnabled = gatewayNotificationsEnabled()
-        gatewayService?.engine?.setUiVisible(true)
+        gatewayService?.setUiVisible(true)
     }
 
     override fun onStop() {
-        gatewayService?.engine?.setUiVisible(false)
+        gatewayService?.setUiVisible(false)
         super.onStop()
     }
 
@@ -668,7 +668,7 @@ fun TorrentConverterScreen(
             SectionCard {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                     Eyebrow("01 / GATEWAY", Lime)
-                    Text("AUTO OFF · 30s IDLE", color = Muted, fontSize = 9.sp, letterSpacing = .7.sp)
+                    Text("AUTO OFF · BACKGROUND", color = Muted, fontSize = 9.sp, letterSpacing = .7.sp)
                 }
                 Text(
                     if (gateway.changing) "Switching gears." else if (gateway.running) "Ready to move." else "Your device.\nYour gateway.",
