@@ -25,7 +25,6 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -34,7 +33,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
@@ -50,12 +48,23 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
+import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.core.view.WindowCompat
 import androidx.core.content.ContextCompat
 import androidx.core.app.NotificationManagerCompat
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.material3.LinearProgressIndicator
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.heightIn
 import com.example.torrenttoddl.service.GatewayState
 import androidx.lifecycle.lifecycleScope
@@ -102,6 +111,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        window.statusBarColor = android.graphics.Color.rgb(11, 15, 19)
+        window.navigationBarColor = android.graphics.Color.rgb(11, 15, 19)
+        WindowCompat.getInsetsController(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            isAppearanceLightNavigationBars = false
+        }
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
             override fun handleOnBackPressed() {
                 finishAndRemoveTask()
@@ -116,7 +131,7 @@ class MainActivity : ComponentActivity() {
         startAndBindGatewayService()
 
         setContent {
-            MaterialTheme {
+            TorrentAppTheme {
                 Surface(modifier = Modifier.fillMaxSize()) {
                     val service = gatewayService
                     val torrentPicker = rememberLauncherForActivityResult(
@@ -544,6 +559,66 @@ class MainActivity : ComponentActivity() {
     }
 }
 
+private val Ink = androidx.compose.ui.graphics.Color(0xFF0B0F13)
+private val Panel = androidx.compose.ui.graphics.Color(0xFF141B22)
+private val Edge = androidx.compose.ui.graphics.Color(0xFF2B3540)
+private val Lime = androidx.compose.ui.graphics.Color(0xFFCEFA67)
+private val Ice = androidx.compose.ui.graphics.Color(0xFF83DBE8)
+private val Paper = androidx.compose.ui.graphics.Color(0xFFF1F5EE)
+private val Muted = androidx.compose.ui.graphics.Color(0xFF9AA8B5)
+
+@Composable
+private fun TorrentAppTheme(content: @Composable () -> Unit) {
+    MaterialTheme(
+        colorScheme = androidx.compose.material3.darkColorScheme(
+            primary = Lime, onPrimary = Ink, secondary = Ice, onSecondary = Ink,
+            background = Ink, onBackground = Paper, surface = Panel, onSurface = Paper,
+            surfaceVariant = Panel, onSurfaceVariant = Muted, outline = Edge,
+            error = androidx.compose.ui.graphics.Color(0xFFFF9A9A)
+        ),
+        content = content
+    )
+}
+
+@Composable
+private fun Eyebrow(text: String, color: androidx.compose.ui.graphics.Color = Muted) {
+    Text(text, color = color, fontSize = 10.sp, fontWeight = FontWeight.Bold, letterSpacing = 1.8.sp)
+}
+
+@Composable
+private fun StatusPill(text: String, active: Boolean = false) {
+    Row(
+        Modifier.clip(RoundedCornerShape(50)).background(if (active) Lime.copy(alpha = .12f) else Edge.copy(alpha = .5f))
+            .padding(horizontal = 11.dp, vertical = 7.dp),
+        verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        Box(Modifier.size(5.dp).clip(CircleShape).background(if (active) Lime else Muted))
+        Text(text, color = if (active) Lime else Muted, fontSize = 10.sp, fontWeight = FontWeight.Bold)
+    }
+}
+
+@Composable
+private fun SectionCard(content: @Composable ColumnScope.() -> Unit) {
+    androidx.compose.material3.OutlinedCard(
+        modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(24.dp),
+        colors = androidx.compose.material3.CardDefaults.outlinedCardColors(containerColor = Panel),
+        border = androidx.compose.foundation.BorderStroke(1.dp, Edge)
+    ) {
+        Column(Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(14.dp), content = content)
+    }
+}
+
+private fun sizeLabel(bytes: Long): String {
+    if (bytes < 0) return "Size pending"
+    val value = bytes.toDouble()
+    return when {
+        bytes >= 1024L * 1024 * 1024 -> "%.2f GiB".format(Locale.US, value / (1024 * 1024 * 1024))
+        bytes >= 1024L * 1024 -> "%.1f MiB".format(Locale.US, value / (1024 * 1024))
+        bytes >= 1024 -> "%.1f KiB".format(Locale.US, value / 1024)
+        else -> "$bytes B"
+    }
+}
+
 @Composable
 fun TorrentConverterScreen(
     initialMagnet: String,
@@ -563,184 +638,183 @@ fun TorrentConverterScreen(
 ) {
     var magnetInput by remember(initialMagnet) { mutableStateOf(initialMagnet) }
     val lanIp = remember { LocalHttpStreamServer.getLocalLanIpAddress() }
+    val canLoad = gateway.running && !gateway.changing && gateway.downloads.none { !it.finished }
+    val cacheProgress = (status.progressPercent / 100f).coerceIn(0f, 1f)
+    val activeSaves = gateway.downloads.count { !it.finished }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(12.dp)
+    LazyColumn(
+        modifier = Modifier.fillMaxSize()
+            .background(androidx.compose.ui.graphics.Brush.verticalGradient(listOf(Ink, androidx.compose.ui.graphics.Color(0xFF10191E))))
+            .statusBarsPadding().navigationBarsPadding().imePadding(),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 20.dp, vertical = 24.dp),
+        verticalArrangement = Arrangement.spacedBy(18.dp)
     ) {
-        Text(
-            text = "Torrent to Direct Download",
-            style = MaterialTheme.typography.headlineSmall
-        )
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                Text(gateway.message)
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Button(onClick = onStartGateway, enabled = !gateway.running && !gateway.changing) { Text("Start Gateway") }
-                    OutlinedButton(onClick = onStopGateway, enabled = gateway.running && !gateway.changing) { Text("Stop Gateway") }
-                }
-                if (!notificationsEnabled) {
-                    Text("Notifications are disabled for TorrentToDDL.", color = MaterialTheme.colorScheme.error)
-                    OutlinedButton(onClick = onEnableNotifications) { Text("Enable notifications") }
-                }
-                if (gateway.downloads.isNotEmpty()) {
-                    Column(Modifier.heightIn(max = 140.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                        gateway.downloads.forEach { download ->
-                            Text(download.name, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                            Text(download.message, color = if (download.failed) MaterialTheme.colorScheme.error else MaterialTheme.colorScheme.onSurface)
-                            if (download.total > 0) {
-                                val progress = (download.bytes.toDouble() / download.total).toFloat().coerceIn(0f, 1f)
-                                LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth())
-                                Text("${"%.1f".format(Locale.US, progress * 100)}% • ${download.bytes / 1024} / ${download.total / 1024} KB")
-                            } else if (!download.finished) {
-                                LinearProgressIndicator(modifier = Modifier.fillMaxWidth())
-                                Text("${download.bytes / 1024} KB received")
-                            }
-                        }
+        item(key = "brand") {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Box(Modifier.size(38.dp).clip(RoundedCornerShape(12.dp)).background(Lime), contentAlignment = Alignment.Center) {
+                        Text("T/", color = Ink, fontSize = 21.sp, fontWeight = FontWeight.Black)
                     }
-                    Text("Use Home to keep downloading. Back, Stop or Reset stops active transfers.", style = MaterialTheme.typography.bodySmall)
-                }
-                gateway.error?.let { Text(it, color = MaterialTheme.colorScheme.error, maxLines = 3, overflow = TextOverflow.Ellipsis) }
-            }
-        }
-
-        OutlinedTextField(
-            value = magnetInput,
-            onValueChange = { magnetInput = it },
-            label = { Text("Paste Magnet URI (magnet:?xt=urn:btih:...)") },
-            modifier = Modifier.fillMaxWidth(),
-            singleLine = true
-        )
-
-        Row(
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Button(
-                onClick = { onConvertMagnet(magnetInput.trim()) },
-                enabled = gateway.running && !gateway.changing && magnetInput.startsWith("magnet:", ignoreCase = true),
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Convert Magnet")
-            }
-
-            OutlinedButton(
-                onClick = onPickTorrentFile,
-                enabled = gateway.running && !gateway.changing,
-                modifier = Modifier.weight(1f)
-            ) {
-                Text("Pick .torrent File")
-            }
-        }
-
-        Card(modifier = Modifier.fillMaxWidth()) {
-            Column(modifier = Modifier.padding(12.dp)) {
-                Text("Status: ${status.stateText}", style = MaterialTheme.typography.bodyMedium)
-                if (status.torrentName.isNotBlank()) {
-                    Text("Torrent: ${status.torrentName}", style = MaterialTheme.typography.titleSmall)
-                    Text(
-                        "Speed: ${status.downloadSpeedKbps} KB/s | Peers: ${status.peers} | Cached: ${
-                            "%.1f".format(Locale.US, status.progressPercent)
-                        }%"
-                    )
-                }
-            }
-        }
-
-        incomingError?.let { error ->
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "Could not open the incoming torrent: $error",
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
-        }
-
-        when {
-            status.isReadyForDdl && status.files.isEmpty() -> {
-                Text("The torrent has no files to stream.")
-                Spacer(modifier = Modifier.weight(1f))
-            }
-
-            status.isReadyForDdl -> {
-                Text(
-                    text = "Generated Direct Links (${status.files.size} files):",
-                    style = MaterialTheme.typography.titleMedium
-                )
-
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .fillMaxWidth()
-                ) {
-                    LazyColumn(
-                        verticalArrangement = Arrangement.spacedBy(8.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(
-                            items = status.files,
-                            key = { fileEntry -> "${fileEntry.index}:${fileEntry.relativePath}" }
-                        ) { fileEntry ->
-                            FileDdlCard(
-                                fileEntry = fileEntry,
-                                lanIp = lanIp,
-                                onCopyLink = onCopyLink,
-                                onDownloadWithSystemManager = onDownloadWithSystemManager,
-                                onOpenExternalApp = onOpenExternalApp
-                            )
-                        }
+                    Column(verticalArrangement = Arrangement.spacedBy(3.dp)) {
+                        Text("TorrentToDDL", color = Paper, fontWeight = FontWeight.Bold, fontSize = 17.sp, letterSpacing = (-.5).sp)
+                        Eyebrow("THE ON-DEVICE GATEWAY")
                     }
                 }
-            }
-
-            isLoadingState(status.stateText) -> {
-                Row(
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp))
-                    Text(status.stateText)
-                }
-                Spacer(modifier = Modifier.weight(1f))
-            }
-
-            isErrorState(status.stateText) -> {
-                Text(
-                    text = status.stateText,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.fillMaxWidth()
-                )
-                Spacer(modifier = Modifier.weight(1f))
-            }
-
-            else -> {
-                Text("Paste a magnet URI or choose a .torrent file to begin.")
-                Spacer(modifier = Modifier.weight(1f))
+                StatusPill(if (gateway.changing) "BUSY" else if (gateway.running) "LIVE" else "OFFLINE", gateway.running)
             }
         }
 
-        OutlinedButton(
-            onClick = onReset,
-            modifier = Modifier.fillMaxWidth()
-        ) {
-            Text("Reset Gateway")
+        item(key = "gateway") {
+            SectionCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Eyebrow("01 / GATEWAY", Lime)
+                    Text("AUTO OFF · 30s IDLE", color = Muted, fontSize = 9.sp, letterSpacing = .7.sp)
+                }
+                Text(
+                    if (gateway.changing) "Switching gears." else if (gateway.running) "Ready to move." else "Your device.\nYour gateway.",
+                    color = Paper, fontSize = 33.sp, lineHeight = 36.sp, fontWeight = FontWeight.Bold, letterSpacing = (-1.3).sp
+                )
+                Text(gateway.message, color = Muted, fontSize = 12.sp, lineHeight = 18.sp)
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = onStartGateway, enabled = !gateway.running && !gateway.changing,
+                        modifier = Modifier.weight(1f).heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) { Text("Start Gateway", fontWeight = FontWeight.Bold) }
+                    OutlinedButton(onClick = onStopGateway, enabled = gateway.running && !gateway.changing,
+                        modifier = Modifier.weight(1f).heightIn(min = 50.dp), shape = RoundedCornerShape(16.dp)) { Text("Stop Gateway") }
+                }
+            }
+        }
+
+        if (!notificationsEnabled) item(key = "notification") {
+            SectionCard {
+                Eyebrow("NOTIFICATIONS ARE OFF", Ice)
+                Text("Allow notifications to see your gateway and transfers in the notification bar.", color = Muted, fontSize = 12.sp)
+                OutlinedButton(onClick = onEnableNotifications, shape = RoundedCornerShape(14.dp)) { Text("Enable notifications") }
+            }
+        }
+
+        val visibleError = incomingError ?: gateway.error
+        if (visibleError != null) item(key = "error") {
+            androidx.compose.material3.OutlinedCard(
+                Modifier.fillMaxWidth(), shape = RoundedCornerShape(18.dp),
+                border = androidx.compose.foundation.BorderStroke(1.dp, MaterialTheme.colorScheme.error.copy(alpha = .5f)),
+                colors = androidx.compose.material3.CardDefaults.outlinedCardColors(containerColor = MaterialTheme.colorScheme.error.copy(alpha = .07f))
+            ) {
+                Column(Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(7.dp)) {
+                    Eyebrow("NEEDS YOUR ATTENTION", MaterialTheme.colorScheme.error)
+                    Text(visibleError, fontSize = 13.sp, color = Paper, lineHeight = 19.sp)
+                }
+            }
+        }
+
+        item(key = "input") {
+            SectionCard {
+                Eyebrow("02 / ADD A TORRENT")
+                OutlinedTextField(
+                    value = magnetInput, onValueChange = { magnetInput = it }, singleLine = true,
+                    label = { Text("Magnet link", fontSize = 12.sp) },
+                    placeholder = { Text("magnet:?xt=urn:btih:…", fontSize = 12.sp) },
+                    modifier = Modifier.fillMaxWidth(), shape = RoundedCornerShape(16.dp),
+                    textStyle = androidx.compose.ui.text.TextStyle(fontSize = 13.sp, color = Paper)
+                )
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Button(onClick = { onConvertMagnet(magnetInput.trim()) },
+                        enabled = canLoad && magnetInput.startsWith("magnet:", true),
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Resolve magnet", fontSize = 12.sp) }
+                    OutlinedButton(onClick = onPickTorrentFile, enabled = canLoad,
+                        modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Browse .torrent", fontSize = 12.sp) }
+                }
+                if (!gateway.running) Text("Start your gateway to add a torrent.", color = Muted, fontSize = 11.sp)
+                else if (activeSaves > 0) Text("Stop active transfers before changing the torrent.", color = Muted, fontSize = 11.sp)
+            }
+        }
+
+        if (status.torrentName.isNotBlank() || isLoadingState(status.stateText)) item(key = "cache") {
+            SectionCard {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                    Eyebrow("03 / TORRENT CACHE", Ice)
+                    Text("%.1f%%".format(Locale.US, status.progressPercent), color = Ice, fontSize = 25.sp, fontWeight = FontWeight.Bold)
+                }
+                Text(status.torrentName.ifBlank { "Finding your torrent…" }, fontSize = 18.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (isLoadingState(status.stateText)) LinearProgressIndicator(Modifier.fillMaxWidth(), color = Ice)
+                else LinearProgressIndicator(progress = cacheProgress, modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape), color = Ice, trackColor = Edge)
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(20.dp)) {
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Eyebrow("FROM PEERS")
+                        Text("${sizeLabel(status.downloadSpeedKbps.toLong() * 1024)}/s", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    }
+                    Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                        Eyebrow("CONNECTED")
+                        Text("${status.peers} peers", fontWeight = FontWeight.SemiBold, fontSize = 16.sp)
+                    }
+                }
+                Text(status.stateText, color = Muted, fontSize = 11.sp)
+                Text("Internet → torrent cache. This can include data cached earlier.", color = Muted, fontSize = 11.sp, lineHeight = 16.sp)
+            }
+        }
+
+        if (gateway.downloads.isNotEmpty()) item(key = "save-label") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Eyebrow("04 / SAVING TO DOWNLOADS", Lime)
+                Text(if (activeSaves > 0) "$activeSaves active" else "Transfer history", color = Muted, fontSize = 11.sp)
+            }
+        }
+        items(gateway.downloads.asReversed(), key = { "save:${it.id}" }) { download ->
+            SaveProgressCard(download)
+        }
+        if (gateway.downloads.isNotEmpty()) item(key = "background-note") {
+            Text("Use Home to keep transfers running. Back, Stop or Reset ends active transfers.", color = Muted, fontSize = 11.sp, lineHeight = 17.sp)
+        }
+
+        if (status.isReadyForDdl) {
+            item(key = "files-label") {
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Eyebrow("FILES / DIRECT LINKS")
+                    Text("${status.files.size} available", color = Muted, fontSize = 11.sp)
+                }
+            }
+            items(status.files, key = { "file:${status.infoHash}:${it.index}" }) { fileEntry ->
+                FileDdlCard(fileEntry, lanIp, onCopyLink, onDownloadWithSystemManager, onOpenExternalApp)
+            }
+            if (status.files.isEmpty()) item(key = "empty-files") { Text("This torrent contains no files.", color = Muted) }
+        }
+        item(key = "footer") {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Eyebrow("ON DEVICE. IN YOUR CONTROL.")
+                    Text("TorrentToDDL / gateway", color = Muted, fontSize = 10.sp)
+                }
+                androidx.compose.material3.TextButton(onClick = onReset) { Text("Reset", color = Muted, fontSize = 12.sp) }
+            }
         }
     }
 }
 
-private fun isLoadingState(stateText: String): Boolean =
-    stateText.startsWith("Fetching", ignoreCase = true) ||
-        stateText.startsWith("Loading", ignoreCase = true) ||
-        stateText.startsWith("Starting", ignoreCase = true)
+@Composable
+private fun SaveProgressCard(download: com.example.torrenttoddl.service.GatewayDownload) {
+    val knownTotal = download.total > 0
+    val progress = if (knownTotal) (download.bytes.toDouble() / download.total).toFloat().coerceIn(0f, 1f) else 0f
+    val accent = if (download.failed) MaterialTheme.colorScheme.error else Lime
+    SectionCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Eyebrow("LOCAL SAVE", accent)
+                Text(download.name, fontSize = 16.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            }
+            Text(if (knownTotal) "%.1f%%".format(Locale.US, progress * 100) else "—", color = accent, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        }
+        if (knownTotal) LinearProgressIndicator(progress = progress, modifier = Modifier.fillMaxWidth().height(5.dp).clip(CircleShape), color = accent, trackColor = Edge)
+        else if (!download.finished) LinearProgressIndicator(modifier = Modifier.fillMaxWidth(), color = accent, trackColor = Edge)
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Text("${sizeLabel(download.bytes)} / ${sizeLabel(download.total)}", color = Muted, fontSize = 11.sp)
+            Text("${sizeLabel(download.bytesPerSecond)}/s", color = accent, fontSize = 11.sp)
+        }
+        Text(download.message, color = if (download.failed) accent else Paper, fontSize = 12.sp, lineHeight = 18.sp)
+        Text("Torrent cache → Downloads. Cached files can save much faster than your internet speed.", color = Muted, fontSize = 10.sp, lineHeight = 15.sp)
+    }
+}
 
-private fun isErrorState(stateText: String): Boolean =
-    stateText.isNotBlank() &&
-        !stateText.equals("Idle", ignoreCase = true) &&
-        !isLoadingState(stateText)
+private fun isLoadingState(stateText: String): Boolean =
+    stateText.startsWith("Fetching", true) || stateText.startsWith("Loading", true) || stateText.startsWith("Starting", true)
 
 @Composable
 fun FileDdlCard(
@@ -750,58 +824,36 @@ fun FileDdlCard(
     onDownloadWithSystemManager: (String, String) -> Unit,
     onOpenExternalApp: (String) -> Unit
 ) {
+    var showLinks by remember(fileEntry.relativePath) { mutableStateOf(false) }
     val encodedName = URLEncoder.encode(fileEntry.name, "UTF-8").replace("+", "%20")
     val localDdl = "http://127.0.0.1:${TorrentGatewayService.SERVER_PORT}/files/${fileEntry.index}/$encodedName"
     val lanDdl = "http://$lanIp:${TorrentGatewayService.SERVER_PORT}/files/${fileEntry.index}/$encodedName"
-    val sizeMb = "%.2f MB".format(Locale.US, fileEntry.sizeBytes / (1024.0 * 1024.0))
-
-    androidx.compose.material3.OutlinedCard(modifier = Modifier.fillMaxWidth()) {
-        Column(
-            modifier = Modifier.padding(12.dp),
-            verticalArrangement = Arrangement.spacedBy(6.dp)
-        ) {
-            Text(
-                text = "${fileEntry.name} ($sizeMb)",
-                style = MaterialTheme.typography.titleSmall,
-                modifier = Modifier.fillMaxWidth(),
-                softWrap = true,
-                overflow = TextOverflow.Clip
-            )
-
-            SelectionContainer {
-                Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text(
-                        text = "On-device URL: $localDdl",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth(),
-                        softWrap = true
-                    )
-                    Text(
-                        text = "LAN URL: $lanDdl",
-                        style = MaterialTheme.typography.bodySmall,
-                        modifier = Modifier.fillMaxWidth(),
-                        softWrap = true
-                    )
-                }
+    SectionCard {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            Box(Modifier.size(46.dp).clip(RoundedCornerShape(14.dp)).background(Ice.copy(alpha = .09f)), contentAlignment = Alignment.Center) {
+                Text(fileEntry.name.substringAfterLast('.', "FILE").take(4).uppercase(Locale.US), color = Ice, fontSize = 10.sp, fontWeight = FontWeight.Bold)
             }
-
-            OutlinedButton(
-                onClick = { onCopyLink(lanDdl) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Copy LAN Link")
+            Column(Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(5.dp)) {
+                Text(fileEntry.name, fontSize = 15.sp, fontWeight = FontWeight.SemiBold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+                Text(sizeLabel(fileEntry.sizeBytes), color = Muted, fontSize = 12.sp)
             }
-            Button(
-                onClick = { onDownloadWithSystemManager(localDdl, fileEntry.name) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Download on This Device")
-            }
-            OutlinedButton(
-                onClick = { onOpenExternalApp(localDdl) },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text("Open on This Device")
+        }
+        Button(onClick = { onDownloadWithSystemManager(localDdl, fileEntry.name) }, modifier = Modifier.fillMaxWidth().heightIn(min = 46.dp), shape = RoundedCornerShape(14.dp)) {
+            Text("Save to device", fontWeight = FontWeight.Bold)
+        }
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { onCopyLink(lanDdl) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Copy LAN link", fontSize = 11.sp) }
+            OutlinedButton(onClick = { onOpenExternalApp(localDdl) }, modifier = Modifier.weight(1f), shape = RoundedCornerShape(14.dp)) { Text("Open file", fontSize = 11.sp) }
+        }
+        androidx.compose.material3.TextButton(onClick = { showLinks = !showLinks }, modifier = Modifier.fillMaxWidth()) {
+            Text(if (showLinks) "Hide direct links −" else "Show direct links +", color = Muted, fontSize = 11.sp)
+        }
+        if (showLinks) SelectionContainer {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Eyebrow("ON THIS DEVICE")
+                Text(localDdl, color = Ice, fontSize = 11.sp, lineHeight = 16.sp)
+                Eyebrow("LOCAL NETWORK")
+                Text(lanDdl, color = Ice, fontSize = 11.sp, lineHeight = 16.sp)
             }
         }
     }
