@@ -32,7 +32,8 @@ import kotlinx.coroutines.sync.withLock
 data class GatewayDownload(
     val id: Long, val name: String, val bytes: Long = 0L, val total: Long = -1L,
     val message: String = "Queued", val finished: Boolean = false, val failed: Boolean = false,
-    val lastProgressAt: Long = SystemClock.elapsedRealtime()
+    val lastProgressAt: Long = SystemClock.elapsedRealtime(),
+    val sampledAt: Long = SystemClock.elapsedRealtime(), val bytesPerSecond: Long = 0L
 )
 
 data class GatewayState(
@@ -97,7 +98,7 @@ class TorrentGatewayService : Service() {
 
     private fun startGateway() {
         if (_state.value.running || _state.value.changing) return
-        _state.update { it.copy(changing = true, message = "Starting gateway…") }
+        _state.update { it.copy(changing = true, message = "Starting gateway…", error = null) }
         serviceScope.launch {
             transition.withLock {
                 try {
@@ -224,7 +225,11 @@ class TorrentGatewayService : Service() {
             return old.copy(bytes = bytes, total = total, message = message,
                 finished = status == DownloadManager.STATUS_SUCCESSFUL || status == DownloadManager.STATUS_FAILED,
                 failed = status == DownloadManager.STATUS_FAILED,
-                lastProgressAt = if (bytes > old.bytes) now else old.lastProgressAt)
+                lastProgressAt = if (bytes > old.bytes) now else old.lastProgressAt,
+                sampledAt = now,
+                bytesPerSecond = if (status == DownloadManager.STATUS_RUNNING && now > old.sampledAt && bytes >= old.bytes) {
+                    ((bytes - old.bytes).toDouble() * 1000.0 / (now - old.sampledAt)).toLong()
+                } else 0L)
         }
         return old.copy(finished = true, failed = true, message = "Android download service unavailable")
     }
