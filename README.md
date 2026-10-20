@@ -1,105 +1,102 @@
-# TorrentToDDL
+<p align="center">
+  <img src="branding/readme-hero.svg" alt="TorrentToDDL — Your device. Your gateway. Turn torrents into local download links on Android." width="100%">
+</p>
 
-<img src="branding/torrenttoddl-logo.svg" width="120" alt="TorrentToDDL logo">
+<p align="center">
+  <a href="https://github.com/Saakihegde12345/TorrentToDDL/releases/latest/download/TorrentToDDL.apk"><img src="branding/download-apk.svg" alt="Download the latest TorrentToDDL.apk" width="250" height="56"></a>
+</p>
 
-TorrentToDDL is an on-device Android torrent gateway. It resolves a magnet URI
-or opens a `.torrent` file, downloads pieces with libtorrent, and exposes the
-files as local HTTP direct-download links.
+<p align="center">
+  <a href="https://github.com/Saakihegde12345/TorrentToDDL/releases/latest"><strong>Release notes &amp; checksums</strong></a>
+  &nbsp; · &nbsp;
+  <a href="#quick-start"><strong>Quick start</strong></a>
+  &nbsp; · &nbsp;
+  <a href="#under-the-hood"><strong>Build &amp; contribute</strong></a>
+  &nbsp; · &nbsp;
+  <a href="https://github.com/Saakihegde12345/TorrentToDDL/issues"><strong>Report an issue</strong></a>
+</p>
 
-## User flow
+<p align="center">
+  <a href="https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/release.yml"><img src="https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/release.yml/badge.svg" alt="Public release workflow status"></a>
+  <a href="https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/build-apk.yml"><img src="https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/build-apk.yml/badge.svg" alt="Development build workflow status"></a>
+</p>
 
-1. Press **Start Gateway**, then paste a `magnet:` URI or choose a `.torrent` file.
-2. Wait for torrent metadata. The app lists the files as soon as the metadata
-   is available; the complete torrent does not need to finish first.
-3. Use the on-device URL with Android DownloadManager, or copy/open the LAN
-   URL from another device on the same Wi-Fi or hotspot.
-4. Use **Reset Gateway** to stop the active torrent. Loading another torrent starts a fresh session.
+---
 
-The local HTTP gateway listens on port `8080` and supports normal downloads,
-HTTP byte ranges, open-ended ranges, and suffix ranges. The URL filename is
-display-only; file access is resolved from torrent metadata and the app cache.
+## Meet your pocket gateway
 
-## Build with GitHub Actions
+**TorrentToDDL turns your Android device into a local torrent-to-HTTP gateway.**
+Add a magnet link or a `.torrent` file, browse its files, save them to Downloads,
+or open their direct links from another device on the same network.
 
-The workflow in `.github/workflows/build-apk.yml` runs on pushes and pull
-requests targeting `main` or `master`, and can also be started manually from
-the **Actions** tab with **Build Android APK** → **Run workflow**.
+Torrent metadata unlocks the file list. The entire torrent does **not** need to
+finish before you request a file; the gateway waits for the required pieces.
 
-The workflow:
+<table>
+<tr>
+<td width="50%"><strong>01 · ADD YOUR TORRENT</strong><br><br>Resolve magnet links or choose a <code>.torrent</code> file from Android's file picker.</td>
+<td width="50%"><strong>02 · SAVE TO YOUR DEVICE</strong><br><br>Send a file to Android Downloads and follow its received bytes, progress and status.</td>
+</tr>
+<tr>
+<td width="50%"><strong>03 · SHARE ACROSS YOUR LAN</strong><br><br>Copy a direct HTTP link for another device on the same Wi-Fi or hotspot.</td>
+<td width="50%"><strong>04 · SEE WHAT IS MOVING</strong><br><br>Separate torrent-cache and local-save meters show the two stages of a transfer.</td>
+</tr>
+<tr>
+<td width="50%"><strong>05 · CONTROL THE GATEWAY</strong><br><br>Explicit Start and Stop controls, foreground protection, and background idle shutdown.</td>
+<td width="50%"><strong>06 · MADE FOR ANDROID</strong><br><br>A graphite interface, lime and cyan accents, adaptive launcher icons and themed-icon support.</td>
+</tr>
+</table>
 
-- Uses Temurin JDK 17.
-- Uses Gradle 8.5 through `gradle/actions/setup-gradle`.
-- Runs `lintDebug` and `check`.
-- Builds `assembleDebug`.
-- Names the APK `TorrentToDDL.apk`.
-- On successful push/manual builds, publishes it as a GitHub prerelease asset
-  and adds a direct **Download TorrentToDDL.apk** link to the workflow summary.
-- Uses Actions artifacts only for job transfer and pull-request previews;
-  downloading an Actions artifact still produces a ZIP.
-- Uploads Android build and test reports when available.
+## Quick start
 
-This repository intentionally uses the existing Gradle configuration and does
-not include a generated wrapper. GitHub Actions provisions Gradle 8.5 directly
-when `./gradlew` is absent; the workflow will automatically use a wrapper if
-one is added later.
+| Step | What to do |
+| :--- | :--- |
+| **1 · Install** | Download **[TorrentToDDL.apk](https://github.com/Saakihegde12345/TorrentToDDL/releases/latest/download/TorrentToDDL.apk)**. Android 8.0 or newer is required. |
+| **2 · Start** | Open the app and press **Start Gateway**. Allow notifications to see gateway and transfer status in the notification drawer. |
+| **3 · Add** | Paste a magnet link and select **Resolve magnet**, or use **Browse .torrent**. Wait for the file list. |
+| **4 · Use** | Choose **Save to device**, **Open file**, or **Copy LAN link** on a file card. |
 
-## Local development
+**For another device:** use the LAN link while both devices are on the same
+network and the gateway is running. The `127.0.0.1` link works only on the Android
+device hosting the gateway.
 
-The project requires JDK 17 and Android SDK 34. From the project root, use the
-same checks as CI:
+> [!NOTE]
+> These are local/LAN links, not public internet-hosted download URLs.
+> Anyone who can reach the gateway on your network may request an exposed file.
+> Use LAN sharing on a trusted network.
 
-```text
-gradle lintDebug check assembleDebug --no-daemon
+## One transfer. Two stages.
+
+```mermaid
+flowchart LR
+    P["Torrent peers"] --> C["On-device torrent cache"]
+    C --> G["Local HTTP gateway"]
+    G --> D["Android Downloads"]
+    G --> L["Devices on your LAN"]
 ```
 
-The app targets Android 34 and requires Android 8.0 (API 26) or newer. It uses
-cleartext HTTP because the gateway is intentionally a local/LAN HTTP service.
-Anyone who can reach the device on that network may request an exposed file;
-use the gateway only on a trusted network.
+| Meter | What it measures | How to read it |
+| :--- | :--- | :--- |
+| **Torrent cache · cyan** | Wanted payload bytes present versus total wanted bytes, plus peer receive rate and peer count. | May include data cached earlier. File-checking task percentages are not counted as downloaded payload. |
+| **Saving to Downloads · lime** | Android DownloadManager's received bytes, total size, transfer state and measured byte rate. | Cached files can save much faster than your internet connection because this stage uses local loopback. |
 
-## Installing updates without package conflicts
+Save speeds come from byte differences over elapsed monotonic time.
+There is no simulated progress or artificial speed cap. Peer availability and
+network conditions determine how quickly uncached torrent data arrives.
 
-Android requires an update to have the same application ID and signing
-certificate as the installed app, and a compatible version code. This project
-keeps `com.example.torrenttoddl` and now uses version code 7 (version 1.0.6).
-Increasing the version code does not fix a certificate mismatch.
+Allow storage space for **both the torrent cache and the copy saved to Downloads**.
 
-Fresh GitHub Actions runners generate different debug keystores by default.
-For repeatable debug updates, create the repository Actions secret
-`DEBUG_KEYSTORE_BASE64` using the debug keystore that signed your installed
-APK. It must use the standard debug alias `androiddebugkey`, with both store
-and key passwords set to `android`. Never use a release keystore here.
+## Your gateway, your controls
 
-On the computer that built your installed debug app, with GitHub CLI signed in:
+**The gateway stays on while the app is visible**, including when the torrent is
+fully cached or a save finishes. Active background transfers keep it running.
+An unused background gateway gets a fresh 30-second idle window.
 
-```bash
-base64 < "$HOME/.android/debug.keystore" | tr -d '\n' | \
-  gh secret set DEBUG_KEYSTORE_BASE64 --repo Saakihegde12345/TorrentToDDL
-```
+Use **Home** to continue transfers in the background. **Back**, removal from
+Recents, **Stop**, and **Reset** stop the gateway and end unfinished managed saves.
 
-Alternatively, add the Base64 value under repository **Settings → Secrets and
-variables → Actions → New repository secret**. Keep a private backup of the
-original keystore. Do not commit it or paste it into logs or issues.
-
-Push/manual builds restore that secret before Gradle signs the APK. Without
-the secret they still build, but warn that the signing identity is temporary.
-Pull-request builds deliberately do not receive the persistent key; their APKs
-are previews and should not be used as update builds. Successful builds also
-include `apk-signing-certificate.txt` in the build reports so certificates can
-be compared without exposing private keys.
-
-If the original key is unavailable (for example, an earlier ephemeral CI key),
-the new APK cannot update that installation. Back up anything needed before
-uninstalling the old app; uninstalling removes app data and its torrent cache.
-Install a build made with your persistent key, then keep using that same key
-for later updates. An old APK alone cannot recover its private signing key.
-
-The release publishing job has `contents: write` permission to create the
-release and attach the APK. It runs only after successful build checks, never
-for pull requests. Open the workflow run summary and click **Download
-TorrentToDDL.apk**, or find the same APK under the corresponding release Assets.
-
-## Gateway lifetime, downloads and battery use
+<details>
+<summary><strong>Gateway lifetime, download timeouts &amp; notifications</strong></summary>
 
 - The app opens with the gateway off. **Start Gateway** starts the foreground
   service and HTTP listener; **Stop Gateway** stops networking and cancels
@@ -137,24 +134,104 @@ is still needed for notification settings, task behavior, actual torrents and
 battery consumption. Active downloads use network, CPU and storage; no measured
 battery-life improvement is claimed.
 
-## Reading progress
+</details>
 
-The dark graphite interface uses lime for gateway controls/local saves and cyan
-for torrent caching. All sections share one scrolling list, so files and controls
-remain accessible on smaller screens and with the keyboard open. Direct URLs
-are expandable rather than filling every file card.
+<details>
+<summary><strong>Troubleshooting · common questions</strong></summary>
 
-**Torrent cache** shows the wanted payload bytes present versus wanted bytes,
-peer count and payload receive rate. File-checking task progress is not used as
-download progress, and automatic pause requires the completed/seeding state. **Saving to Downloads / Local save** shows actual Android
-DownloadManager byte counts and total length. Its rate is calculated from byte
-differences over elapsed monotonic time; there is no simulated progress or speed
-cap. These are separate stages: already-cached data travels over loopback to
-Downloads and can move much faster than the current internet connection. A fast
-local save is not evidence of a faster swarm download. Completion/failure stays
-visible in the transfer history while the service remains bound.
+**The gateway notification is missing.**
 
-## Public releases
+Use **Enable notifications** in the app. Check both app notification permission
+and the gateway notification channel in Android settings.
+
+**A save jumps forward very quickly.**
+
+Cached data can be copied locally to Downloads at storage/loopback speed.
+Check which of the two progress meters you are reading.
+
+**A download is queued, paused or fails.**
+
+Read its in-app status and error toast. Check torrent peers, network access and
+available storage. Android DownloadManager failure reasons are displayed in-app.
+
+**A LAN link will not open.**
+
+Keep the gateway running, use the LAN link rather than the loopback link, and
+confirm both devices can communicate on the same network. Some networks isolate clients.
+
+**Android reports conflicting packages during an update.**
+
+An update needs the same application ID and signing certificate, plus a compatible
+version code. Public releases keep `com.example.torrenttoddl` and the established
+persistent identity. v1.0.6 uses version code 7.
+
+Older temporary-key builds may require a one-time uninstall. Back up anything
+needed first: uninstalling removes app data and the torrent cache. A higher
+version number cannot fix a signing-certificate mismatch.
+
+</details>
+
+## Under the hood
+
+| Layer | Implementation |
+| :--- | :--- |
+| **Interface** | Kotlin · Jetpack Compose · Material 3 |
+| **Torrent engine** | libtorrent4j with native Android libraries |
+| **Gateway** | NanoHTTPD · port `8080` · local/LAN HTTP |
+| **File saves** | Android DownloadManager |
+| **APK architectures** | `arm64-v8a` · `armeabi-v7a` · `x86_64` |
+| **Platform** | Android 8.0+ · compile/target SDK 34 |
+
+The HTTP layer supports normal downloads, open-ended and suffix byte ranges,
+stable torrent/file ETags and matching `If-Match` resume requests. File lookup
+uses torrent metadata and the app cache; the URL filename is display-only.
+
+<details>
+<summary><strong>Local development · toolchain &amp; commands</strong></summary>
+
+The project requires JDK 17 and Android SDK 34. From the project root, use the
+same checks as CI:
+
+```text
+gradle lintDebug check assembleDebug --no-daemon
+```
+
+The app targets Android 34 and requires Android 8.0 (API 26) or newer. It uses
+cleartext HTTP because the gateway is intentionally a local/LAN HTTP service.
+Anyone who can reach the device on that network may request an exposed file;
+use the gateway only on a trusted network.
+
+</details>
+
+<details>
+<summary><strong>Development workflow · GitHub Actions</strong></summary>
+
+The workflow in `.github/workflows/build-apk.yml` runs on pushes and pull
+requests targeting `main` or `master`, and can also be started manually from
+the **Actions** tab with **Build Android APK** → **Run workflow**.
+
+The workflow:
+
+- Uses Temurin JDK 17.
+- Uses Gradle 8.5 through `gradle/actions/setup-gradle`.
+- Runs `lintDebug` and `check`.
+- Builds `assembleDebug`.
+- Names the APK `TorrentToDDL.apk`.
+- On successful push/manual builds, publishes it as a GitHub prerelease asset
+  and adds a direct **Download TorrentToDDL.apk** link to the workflow summary.
+- Uses Actions artifacts only for job transfer and pull-request previews;
+  downloading an Actions artifact still produces a ZIP.
+- Uploads Android build and test reports when available.
+
+This repository intentionally uses the existing Gradle configuration and does
+not include a generated wrapper. GitHub Actions provisions Gradle 8.5 directly
+when `./gradlew` is absent; the workflow will automatically use a wrapper if
+one is added later.
+
+</details>
+
+<details>
+<summary><strong>Public releases · signed APKs &amp; verification</strong></summary>
 
 Version tags such as `v1.0.6` trigger the Public Android Release workflow.
 Release lint, JVM tests, signing identity and the non-debuggable flag are checked
@@ -162,3 +239,62 @@ before publishing a normal GitHub release marked Latest. Assets include
 `TorrentToDDL.apk`, `SHA256SUMS`, the public certificate report and the SVG logo.
 Missing signing secrets fail the release instead of generating a temporary key.
 Existing debug development builds remain available through the original workflow.
+
+
+Public tags must match Android `versionName`, reference a commit reachable from
+`main`, and include `release-notes/<tag>.md`.
+
+Public releases attach:
+
+- **`TorrentToDDL.apk`** — the direct Android installer.
+- **`SHA256SUMS`** — APK checksum.
+- **`apk-signing-certificate.txt`** — public certificate information.
+- **`torrenttoddl-logo.svg`** — editable vector brand mark.
+
+Actions artifact downloads are ZIP files. Use the release APK asset for the
+direct installer. Public APKs are checked to ensure they are not debuggable.
+
+</details>
+
+<details>
+<summary><strong>Maintainers · preserve the signing identity</strong></summary>
+
+The repository secret `DEBUG_KEYSTORE_BASE64` contains the original persistent
+keystore. Its historical name is retained for compatibility; public releases use
+the same identity through the `persistentRelease` signing configuration.
+
+The restoration script exports `TORRENTTODDL_DEBUG_KEYSTORE` for Gradle.
+The alias is `androiddebugkey`, with the standard Android debug store/key
+passwords. Keep a private backup of the original keystore.
+
+Do not commit the keystore, publish its Base64 value, or replace the signing
+identity with a newly generated key. Public releases fail when the secret is
+missing or the certificate does not match the established fingerprint.
+
+Development builds without the secret use temporary keys. Pull-request builds
+never receive the persistent secret and may not update public installations.
+
+The public certificate report is safe to share. An APK or its certificate
+cannot recover the private signing key.
+
+</details>
+
+## Help shape the next release
+
+Try the app and **[report reproducible issues](https://github.com/Saakihegde12345/TorrentToDDL/issues)**.
+Include your Android version, app version, reproduction steps and the visible
+error message. Remove private filenames, magnet links and sensitive details
+before sharing logs.
+
+JVM tests cover HTTP download/resume, stale-torrent rejection,
+foreground/background idle policy and native libtorrent handle recycling/reset.
+Device-specific notification behavior, task lifecycle, swarm conditions and
+battery consumption still need Android device testing.
+
+---
+
+<p align="center">
+  <img src="branding/torrenttoddl-logo.svg" width="52" alt=""><br>
+  <strong>ON DEVICE. IN YOUR CONTROL.</strong><br>
+  <sub>Made for Android · TorrentToDDL</sub>
+</p>

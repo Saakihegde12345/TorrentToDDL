@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="440" viewBox="0 0 1280 440" role="img" aria-labelledby="title desc">
+<title id="title">TorrentToDDL — Your device. Your gateway.</title>
+<desc id="desc">Turn torrents into local direct-download links on Android. Lime and cyan branding on graphite.</desc>
+<rect x="1" y="1" width="1278" height="438" rx="28" fill="#0B0F13" stroke="#2B3540" stroke-width="2"/>
+<path d="M72 56H152" stroke="#CEFA67" stroke-width="5" stroke-linecap="round"/>
+<text x="72" y="105" fill="#83DBE8" font-family="Arial,Helvetica,sans-serif" font-size="15" font-weight="700" letter-spacing="3">THE ON-DEVICE TORRENT GATEWAY</text>
+<text x="68" y="207" fill="#F1F5EE" font-family="Arial,Helvetica,sans-serif" font-size="82" font-weight="700" letter-spacing="-4">TorrentTo<tspan fill="#83DBE8">DDL</tspan></text>
+<text x="72" y="264" fill="#CEFA67" font-family="Arial,Helvetica,sans-serif" font-size="31" font-weight="700">Your device. Your gateway.</text>
+<text x="72" y="308" fill="#9AA8B5" font-family="Arial,Helvetica,sans-serif" font-size="21">Turn torrents into local direct-download links on Android.</text>
+<g font-family="Arial,Helvetica,sans-serif" font-size="13" font-weight="700" letter-spacing="1">
+<rect x="72" y="352" width="138" height="36" rx="18" fill="#141B22" stroke="#2B3540"/>
+<text x="141" y="375" fill="#F1F5EE" text-anchor="middle">ANDROID 8+</text>
+<rect x="222" y="352" width="147" height="36" rx="18" fill="#141B22" stroke="#2B3540"/>
+<text x="295.5" y="375" fill="#83DBE8" text-anchor="middle">LOCAL SHARING</text>
+<rect x="381" y="352" width="151" height="36" rx="18" fill="#141B22" stroke="#2B3540"/>
+<text x="456.5" y="375" fill="#CEFA67" text-anchor="middle">REAL PROGRESS</text>
+</g>
+<rect x="900" y="44" width="320" height="352" rx="26" fill="#10171D" stroke="#2B3540"/>
+<g transform="translate(866 10) scale(3.6)">
+<path d="M42 29L29 36V72L54 86L79 72V36L66 29" fill="none" stroke="#83DBE8" stroke-width="6" stroke-linecap="round" stroke-linejoin="round"/>
+<path d="M36 25H72V35H59V53H69L54 69L39 53H49V35H36Z" fill="#CEFA67"/>
+</g>
+</svg>
