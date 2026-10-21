@@ -69,9 +69,9 @@ Use an Apple Silicon Mac with Xcode and an installed iPhone simulator:
 
 ```sh
 python -m pip install cmake==3.31.6 cairosvg==2.7.1 Pillow==11.1.0
-brew install xcodegen
+brew install cairo libffi xcodegen
 python scripts/build-apple-native.py ios
-python scripts/generate-ios-assets.py
+DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix cairo)/lib" python scripts/generate-ios-assets.py
 xcodegen generate --spec ios/project.yml
 open ios/TorrentToDDL.xcodeproj
 ```
