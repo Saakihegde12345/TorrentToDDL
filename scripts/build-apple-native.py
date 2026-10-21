@@ -101,7 +101,9 @@ def cmake(source, build, boost_root, ssl_root, sdk, **options):
     args = ["cmake", "-S", source, "-B", build, "-G", "Unix Makefiles",
             "-DCMAKE_BUILD_TYPE=Release", "-DCMAKE_OSX_ARCHITECTURES=arm64",
             "-DCMAKE_OSX_SYSROOT=" + output("xcrun", "--sdk", sdk, "--show-sdk-path"),
-            "-DBOOST_ROOT=" + str(boost_root), "-DBoost_NO_BOOST_CMAKE=ON",
+            "-DBOOST_ROOT=" + str(boost_root), "-DBoost_ROOT=" + str(boost_root),
+            # Header-only Boost lives outside the iOS SDK search root.
+            "-DBoost_INCLUDE_DIR=" + str(boost_root), "-DBoost_NO_BOOST_CMAKE=ON",
             "-DBoost_NO_SYSTEM_PATHS=ON", "-DOPENSSL_ROOT_DIR=" + str(ssl_root),
             "-DOPENSSL_INCLUDE_DIR=" + str(ssl_root / "include"),
             "-DOPENSSL_SSL_LIBRARY=" + str(ssl_root / "lib/libssl.a"),
@@ -134,7 +136,7 @@ def macos_arm64(ssl_source):
     cmake(source / "swig", build, boost_root, openssl, "macosx",
           CMAKE_OSX_DEPLOYMENT_TARGET="12.0", webtorrent="OFF")
     library = build / "libtorrent4j.dylib"
-    run("lipo", "-verify_arch", "arm64", library)
+    run("lipo", library, "-verify_arch", "arm64")
     dependencies = output("otool", "-L", library)
     for line in dependencies.splitlines()[2:]:
         dependency = line.strip().split(" (", 1)[0]
@@ -168,7 +170,7 @@ def ios(ssl_source):
         run("xcrun", "libtool", "-static", "-o", merged,
             build / "libTorrentNative.a", build / "libtorrent/libtorrent-rasterbar.a",
             openssl / "lib/libssl.a", openssl / "lib/libcrypto.a")
-        run("lipo", "-verify_arch", "arm64", merged)
+        run("lipo", merged, "-verify_arch", "arm64")
         slices += ["-library", merged, "-headers", ROOT / "native/include"]
     output_dir = ROOT / "ios/Generated/TorrentNative.xcframework"
     if output_dir.exists():
