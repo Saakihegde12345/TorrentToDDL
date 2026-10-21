@@ -18,3 +18,20 @@ keystore.properties
 
 # Desktop preview packaging
 dist/
+
+# Apple native build and Xcode output
+.native-build/
+ios/Generated/
+ios/*.xcodeproj/
+ios/build/
+*.xcuserstate
+xcuserdata/
+ios/Resources/Assets.xcassets/
+ios/Resources/ThirdPartyLicenses/Boost.txt
+ios/Resources/ThirdPartyLicenses/libtorrent.txt
+ios/Resources/ThirdPartyLicenses/OpenSSL.txt
+ios/Resources/ThirdPartyLicenses/dependencies.json
+
+# Python build helpers
+__pycache__/
+*.pyc

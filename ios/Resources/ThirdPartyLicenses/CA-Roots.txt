@@ -1,0 +1,13 @@
+The bundled cacert.pem contains public CA certificates extracted from Mozilla's
+certificate data by curl's mk-ca-bundle tool. Source and update information:
+https://curl.se/docs/caextract.html
+https://curl.se/ca/cacert.pem
+
+Mozilla certificate data is licensed under the Mozilla Public License 2.0.
+See Mozilla-MPL-2.0.txt in this directory.
+
+SHA-256 of this checked-in PEM file:
+796f1389bfea13c0ed78f663b765baaff54a508e5483786bd6ece73c5e3e3cbe
+
+The native build additionally places libtorrent, Boost and OpenSSL license texts
+and the dependency revision manifest in this directory for the app bundle.
