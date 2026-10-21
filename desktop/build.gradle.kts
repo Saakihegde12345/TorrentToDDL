@@ -11,12 +11,19 @@ val nativeHost = when {
     System.getProperty("os.name").startsWith("Mac") -> "macos"
     else -> "linux"
 }
+val macArm64 = nativeHost == "macos" &&
+    System.getProperty("os.arch").lowercase() in setOf("arm64", "aarch64")
+val armNativeJar = rootProject.file(".native-build/macos-arm64/libtorrent4j-macos-arm64-2.1.0-31.jar")
 dependencies {
     implementation(project(":core"))
     implementation(compose.desktop.currentOs)
     implementation(compose.material3)
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.8.0")
-    runtimeOnly("org.libtorrent4j:libtorrent4j-$nativeHost:2.1.0-31")
+    if (macArm64) {
+        runtimeOnly(files(armNativeJar))
+    } else {
+        runtimeOnly("org.libtorrent4j:libtorrent4j-$nativeHost:2.1.0-31")
+    }
     testImplementation("junit:junit:4.13.2")
 }
 compose.desktop {

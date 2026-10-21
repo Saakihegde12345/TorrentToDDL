@@ -174,12 +174,13 @@ version number cannot fix a signing-certificate mismatch.
 ## Desktop preview · in development
 
 The shared Kotlin engine now has a Compose Desktop interface. The preview build
-targets **Windows x64**, **Intel macOS** and **Linux x64**; Android remains supported.
+targets **Windows x64**, **Intel/Apple Silicon macOS** and **Linux x64**; Android remains supported.
 
 | Platform | Preview installer |
 | :--- | :--- |
 | Windows x64 | `TorrentToDDL-windows-x64.msi` |
 | Intel macOS | `TorrentToDDL-macos-x64.dmg` |
+| Apple Silicon macOS | `TorrentToDDL-macos-arm64.dmg` |
 | Debian / Ubuntu x64 | `TorrentToDDL-linux-x64.deb` |
 
 [Desktop build status](https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/build-desktop.yml)
@@ -188,9 +189,24 @@ targets **Windows x64**, **Intel macOS** and **Linux x64**; Android remains supp
 
 The workflow publishes direct installer assets only after desktop native tests,
 packaged-launcher checks and the Android regression build pass. Desktop installers
-are experimental and unsigned; macOS is not notarized. Native Apple Silicon,
-iOS and browser clients are not included. Interactive desktop testing is still
+are experimental and unsigned; macOS is not notarized. iOS has a separate developer preview below;
+browser clients are not included. Interactive desktop testing is still
 required before a stable desktop release.
+
+## iPhone & iPad · developer preview
+
+A SwiftUI iOS/iPadOS 17+ app uses a native C++ torrent bridge, real cache/save
+progress, Files import/export, LAN downloads and explicit gateway controls.
+The gateway stops when the app is backgrounded. Android background behavior
+remains unchanged.
+
+[iOS build status](https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/build-ios.yml)
+· [Apple Silicon and iOS setup](docs/apple-platforms.md)
+
+The iOS workflow tests on an ARM64 simulator and builds an **unsigned device
+archive**. Developer artifacts require Xcode; the device archive is not an
+installable signed IPA. Device signing and TestFlight/App Store distribution
+are separate steps. See the Apple guide for the exact limits and commands.
 
 ## Under the hood
 

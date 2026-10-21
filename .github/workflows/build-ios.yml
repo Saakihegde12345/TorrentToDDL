@@ -1,0 +1,96 @@
+name: iOS Developer Preview
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: macos-15
+    timeout-minutes: 90
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          architecture: arm64
+      - name: Record Xcode toolchain
+        id: xcode
+        run: |
+          xcodebuild -version
+          echo "version=$(xcodebuild -version | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@v4
+        id: native-cache
+        with:
+          path: .native-build
+          key: ios-native-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('native/dependencies.json', 'scripts/build-apple-native.py') }}
+      - name: Install build tools
+        run: |
+          python -m pip install cmake==3.31.6 cairosvg==2.7.1 Pillow==11.1.0
+          brew install cairo libffi xcodegen
+      - name: Generate branded iOS assets
+        run: DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix cairo)/lib" python scripts/generate-ios-assets.py
+      - name: Build device and simulator native libraries
+        run: python scripts/build-apple-native.py ios
+      - name: Cache completed native build
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .native-build
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
+      - name: Test simulator, verify UI and archive unsigned device build
+        run: python scripts/build-ios-preview.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: TorrentToDDL-iOS-builds
+          path: dist/*
+          if-no-files-found: error
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: TorrentToDDL-iOS-test-results
+          path: |
+            ios/build/TestResults.xcresult/
+            ios/build/test-summary.json
+            ios/build/attachments/
+          if-no-files-found: warn
+
+  publish:
+    needs: build
+    if: github.event_name != 'pull_request' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-22.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: TorrentToDDL-iOS-builds
+          path: previews
+      - name: Publish developer artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          BUILD_SHA: ${{ github.sha }}
+          PREVIEW_TAG: ios-preview-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          cat > notes.md <<'NOTES'
+          Experimental iPhone/iPad implementation with a native torrent engine and SwiftUI.
+          The simulator app is for Apple Silicon Macs with Xcode's iOS Simulator.
+          The device archive is unsigned and cannot be installed directly on an iPhone.
+          Build/sign with your Apple development team in Xcode for device use.
+          These artifacts are not App Store or TestFlight releases and are not signed IPAs.
+          The gateway and transfers stop when this iOS preview enters the background.
+          NOTES
+          gh release create "$PREVIEW_TAG" previews/* --target "$BUILD_SHA" \
+            --title "TorrentToDDL iOS Developer Preview" --notes-file notes.md --prerelease --latest=false

@@ -9,17 +9,20 @@ shared JVM torrent engine, input stream, HTTP server and gateway idle policy.
 | --- | --- | --- |
 | Windows | x64 | TorrentToDDL-windows-x64.msi |
 | macOS | Intel x64 | TorrentToDDL-macos-x64.dmg |
+| macOS | Apple Silicon ARM64 | TorrentToDDL-macos-arm64.dmg |
 | Linux | x64, Debian/Ubuntu package | TorrentToDDL-linux-x64.deb |
 | Android | Existing ARM64, ARMv7, x64 | TorrentToDDL.apk |
 
-The desktop preview pins the same libtorrent4j 2.1.0-31 as Android. Native
-Apple Silicon, Windows ARM, ARM Linux, iOS and web clients are not included.
+The desktop preview pins the same libtorrent4j 2.1.0-31 as Android.
+Windows ARM, ARM Linux and web clients are not included. iOS has a separate
+[developer preview](apple-platforms.md). Apple Silicon uses a matching native
+binding built from source; see the same guide for its build prerequisites.
 The installers are unsigned; macOS is not notarized. This is an experimental
 preview requiring manual desktop testing, rather than a signed stable release.
 
 ## Run or package
 
-Use JDK 17 (x64) and Gradle 8.5 on the target operating system:
+Use JDK 17 (matching your x64 or ARM64 architecture) and Gradle 8.5 on the target operating system:
 
     gradle -PdesktopOnly=true :desktop:run
     gradle -PdesktopOnly=true :core:test :desktop:test :desktop:smokeTest
@@ -69,7 +72,7 @@ is separate and remains at the destination you selected.
 The Desktop Preview workflow runs real JNI lifetime/reset tests, HTTP
 range/resume tests, idle-policy tests, export integrity and cleanup tests.
 It then runs native startup/HTTP/shutdown through the packaged launcher.
-All three hosts and the Android regression build must pass before direct
+All four desktop targets and the Android regression build must pass before direct
 installer assets are published to a prerelease. Android's signing identity
 and stable release flow are retained.
 

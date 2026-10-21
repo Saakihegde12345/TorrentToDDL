@@ -39,7 +39,7 @@ jobs:
           if-no-files-found: warn
 
   build:
-    name: ${{ matrix.host }} x64
+    name: ${{ matrix.host }} ${{ matrix.arch }}
     runs-on: ${{ matrix.runner }}
     timeout-minutes: 40
     strategy:
@@ -48,23 +48,52 @@ jobs:
         include:
           - host: linux
             runner: ubuntu-22.04
+            arch: x64
+            java_arch: x64
+            python_arch: x64
           - host: windows
             runner: windows-2022
+            arch: x64
+            java_arch: x64
+            python_arch: x64
           - host: macos
             runner: macos-15-intel
+            arch: x64
+            java_arch: x64
+            python_arch: x64
+          - host: macos
+            runner: macos-15
+            arch: arm64
+            java_arch: aarch64
+            python_arch: arm64
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "17"
-          architecture: x64
+          architecture: ${{ matrix.java_arch }}
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+          architecture: ${{ matrix.python_arch }}
       - uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: "8.5"
+      - name: Record Apple toolchain
+        if: matrix.arch == 'arm64'
+        id: xcode
+        run: echo "version=$(xcodebuild -version | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache@v4
+        if: matrix.arch == 'arm64'
+        with:
+          path: .native-build
+          key: macos-jni31-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('native/dependencies.json', 'scripts/build-apple-native.py') }}
+      - name: Build matching Apple Silicon native binding
+        if: matrix.arch == 'arm64'
+        run: |
+          python -m pip install cmake==3.31.6
+          python scripts/build-apple-native.py macos-arm64
       - name: Add Windows installer tools to PATH
         if: runner.os == 'Windows'
         shell: pwsh
@@ -76,16 +105,16 @@ jobs:
       - name: Test native engine and build bundled app and installer
         run: gradle -PdesktopOnly=true :core:test :desktop:test :desktop:smokeTest :desktop:createDistributable :desktop:packageDistributionForCurrentOS --no-daemon --stacktrace
       - name: Verify packaged launcher and collect installer
-        run: python scripts/verify-desktop-package.py ${{ matrix.host }}
+        run: python scripts/verify-desktop-package.py ${{ matrix.host }} ${{ matrix.arch }}
       - uses: actions/upload-artifact@v4
         with:
-          name: desktop-${{ matrix.host }}-x64
+          name: desktop-installer-${{ matrix.host }}-${{ matrix.arch }}
           path: dist/*
           if-no-files-found: error
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: desktop-${{ matrix.host }}-reports
+          name: desktop-${{ matrix.host }}-${{ matrix.arch }}-reports
           path: |
             core/build/reports/
             desktop/build/reports/
@@ -102,7 +131,7 @@ jobs:
     steps:
       - uses: actions/download-artifact@v4
         with:
-          pattern: desktop-*-x64
+          pattern: desktop-installer-*
           merge-multiple: true
           path: installers
       - name: Publish preview
@@ -116,12 +145,14 @@ jobs:
           test -s installers/TorrentToDDL-linux-x64.deb
           test -s installers/TorrentToDDL-windows-x64.msi
           test -s installers/TorrentToDDL-macos-x64.dmg
+          test -s installers/TorrentToDDL-macos-arm64.dmg
           (cd installers && sha256sum TorrentToDDL-* > SHA256SUMS)
           cat > notes.md <<'NOTES'
-          Desktop preview for Windows x64, Intel macOS and Linux x64.
+          Desktop preview for Windows x64, Intel and Apple Silicon macOS, and Linux x64.
           Download the installer for your operating system directly under Assets.
           These preview installers are unsigned and macOS is not notarized.
-          Native Apple Silicon, ARM Linux, iOS and browser clients are not included.
+          Native Apple Silicon uses the arm64 DMG. iOS developer artifacts use their separate preview workflow.
+          ARM Linux and browser clients are not included.
           The existing Android stable release remains available.
           Use LAN sharing only on a trusted network. Report device-specific issues.
           NOTES

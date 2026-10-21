@@ -8,6 +8,12 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 
 host = sys.argv[1]
+architecture = sys.argv[2] if len(sys.argv) > 2 else "x64"
+assert architecture in ("x64", "arm64")
+properties = subprocess.run(["java", "-XshowSettings:properties", "-version"],
+                            capture_output=True, text=True, check=True).stderr
+expected_arches = ("aarch64", "arm64") if architecture == "arm64" else ("amd64", "x86_64")
+assert any("os.arch = " + value in properties for value in expected_arches), properties
 extension, launcher = {
     "linux": ("deb", "TorrentToDDL/bin/TorrentToDDL"),
     "windows": ("msi", "TorrentToDDL/TorrentToDDL.exe"),
@@ -34,7 +40,7 @@ installers = list((base / extension).glob("*." + extension))
 assert len(installers) == 1, f"Expected one {extension} installer: {installers}"
 destination = Path("dist")
 destination.mkdir(exist_ok=True)
-artifact = destination / f"TorrentToDDL-{host}-x64.{extension}"
+artifact = destination / f"TorrentToDDL-{host}-{architecture}.{extension}"
 shutil.copy2(installers[0], artifact)
 
 print(f"{artifact}: {artifact.stat().st_size:,} bytes")

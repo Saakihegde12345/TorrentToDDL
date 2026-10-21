@@ -1,0 +1,25 @@
+{
+  "libtorrent4j": {
+    "repository": "https://github.com/aldenml/libtorrent4j.git",
+    "commit": "f2163baa56ffd82436ec94ac9dfd154b7eaf7ac0",
+    "version": "2.1.0-31"
+  },
+  "libtorrent": {
+    "repository": "https://github.com/arvidn/libtorrent.git",
+    "commit": "1eb18faeae156d8dbbab42935c082f8b81f50989",
+    "version": "2.0.15"
+  },
+  "openssl": {
+    "repository": "https://github.com/openssl/openssl.git",
+    "commit": "45e844fa2a14ec92d146bd8f5778ac130b6625fb",
+    "version": "3.5.9"
+  },
+  "boost_1_81_0": {
+    "url": "https://archives.boost.io/release/1.81.0/source/boost_1_81_0.tar.bz2",
+    "sha256": "71feeed900fbccca04a3b4f2f84a7c217186f28a940ed8b7ed4725986baf99fa"
+  },
+  "boost_1_86_0": {
+    "url": "https://archives.boost.io/release/1.86.0/source/boost_1_86_0.tar.bz2",
+    "sha256": "1bed88e40401b2cb7a1f76d4bab499e352fa4d0c5f31c0dbae64e24d34d7513b"
+  }
+}
