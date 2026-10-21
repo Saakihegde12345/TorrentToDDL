@@ -2,7 +2,7 @@ name: Desktop Preview
 
 on:
   push:
-    branches: [main, desktop-compatibility, apple-platforms]
+    branches: [main, desktop-compatibility]
   pull_request:
     branches: [main]
   workflow_dispatch:
