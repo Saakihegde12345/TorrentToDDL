@@ -29,18 +29,25 @@ jobs:
         run: |
           xcodebuild -version
           echo "version=$(xcodebuild -version | shasum -a 256 | cut -d' ' -f1)" >> "$GITHUB_OUTPUT"
-      - uses: actions/cache@v4
+      - uses: actions/cache/restore@v4
+        id: native-cache
         with:
           path: .native-build
           key: ios-native-${{ runner.arch }}-${{ steps.xcode.outputs.version }}-${{ hashFiles('native/dependencies.json', 'scripts/build-apple-native.py') }}
       - name: Install build tools
         run: |
           python -m pip install cmake==3.31.6 cairosvg==2.7.1 Pillow==11.1.0
-          brew install xcodegen
+          brew install cairo libffi xcodegen
+      - name: Generate branded iOS assets
+        run: DYLD_FALLBACK_LIBRARY_PATH="$(brew --prefix cairo)/lib" python scripts/generate-ios-assets.py
       - name: Build device and simulator native libraries
         run: python scripts/build-apple-native.py ios
-      - name: Generate branded iOS assets
-        run: python scripts/generate-ios-assets.py
+      - name: Cache completed native build
+        if: steps.native-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .native-build
+          key: ${{ steps.native-cache.outputs.cache-primary-key }}
       - name: Test simulator, verify UI and archive unsigned device build
         run: python scripts/build-ios-preview.py
       - uses: actions/upload-artifact@v4
