@@ -106,6 +106,9 @@ jobs:
         run: gradle -PdesktopOnly=true :core:test :desktop:test :desktop:smokeTest :desktop:createDistributable :desktop:packageDistributionForCurrentOS --no-daemon --stacktrace
       - name: Verify packaged launcher and collect installer
         run: python scripts/verify-desktop-package.py ${{ matrix.host }} ${{ matrix.arch }}
+      - name: Package portable Windows app with bundled Java
+        if: runner.os == 'Windows'
+        run: gradle -PdesktopOnly=true :desktop:packageWindowsPortable --no-daemon --stacktrace
       - uses: actions/upload-artifact@v4
         with:
           name: desktop-installer-${{ matrix.host }}-${{ matrix.arch }}
@@ -144,12 +147,14 @@ jobs:
           set -euo pipefail
           test -s installers/TorrentToDDL-linux-x64.deb
           test -s installers/TorrentToDDL-windows-x64.msi
+          test -s installers/TorrentToDDL-windows-x64.zip
           test -s installers/TorrentToDDL-macos-x64.dmg
           test -s installers/TorrentToDDL-macos-arm64.dmg
           (cd installers && sha256sum TorrentToDDL-* > SHA256SUMS)
           cat > notes.md <<'NOTES'
           Desktop preview for Windows x64, Intel and Apple Silicon macOS, and Linux x64.
           Download the installer for your operating system directly under Assets.
+          Windows also includes a portable ZIP: extract it and open TorrentToDDL/TorrentToDDL.exe. Java is bundled.
           These preview installers are unsigned and macOS is not notarized.
           Native Apple Silicon uses the arm64 DMG. iOS developer artifacts use their separate preview workflow.
           ARM Linux and browser clients are not included.

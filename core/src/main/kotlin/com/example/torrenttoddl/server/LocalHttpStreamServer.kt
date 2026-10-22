@@ -10,37 +10,71 @@ import fi.iki.elonen.NanoHTTPD
 import java.net.Inet4Address
 import java.net.NetworkInterface
 import java.net.URLConnection
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
 
 class LocalHttpStreamServer(
     port: Int = 8080,
-    private val engine: TorrentFileSource
-) : NanoHTTPD(port) {
+    private val engine: TorrentFileSource? = null,
+    private val sourceForTorrent: ((String) -> TorrentFileSource?)? = null,
+    private val accessToken: String? = null,
+    bindAddress: String? = null,
+    private val controlHandler: ((IHTTPSession) -> Response)? = null,
+    private val adminToken: String? = null
+) : NanoHTTPD(bindAddress, port) {
+    init {
+        require(controlHandler == null || (!adminToken.isNullOrBlank() && adminToken != accessToken)) {
+            "Remote administration requires a separate nonempty key"
+        }
+    }
 
     private val streams = AtomicInteger()
     val activeStreams: Int get() = streams.get()
     private val served = AtomicBoolean()
     val hasServedDownload: Boolean get() = served.get()
+    private val opened = ConcurrentHashMap.newKeySet<InputStream>()
 
     private fun track(input: InputStream): InputStream {
         streams.incrementAndGet()
         served.set(true)
         return object : FilterInputStream(input) {
             private val released = AtomicBoolean()
+            init { opened.add(this) }
             override fun close() {
                 try { super.close() } finally {
-                    if (released.compareAndSet(false, true)) streams.decrementAndGet()
+                    if (released.compareAndSet(false, true)) {
+                        streams.decrementAndGet()
+                        opened.remove(this)
+                    }
                 }
             }
         }
     }
 
     override fun serve(session: IHTTPSession): Response {
+        val controlRequest = session.uri?.startsWith("/api/") == true && controlHandler != null
+        val expectedToken = if (controlRequest) adminToken else accessToken
+        if (expectedToken != null) {
+            val supplied = headerValue(session, "authorization")?.removePrefix("Bearer ")
+                ?: session.parameters["token"]?.firstOrNull() ?: ""
+            if (!MessageDigest.isEqual(expectedToken.toByteArray(), supplied.toByteArray())) {
+                return textResponse(Response.Status.UNAUTHORIZED, "A valid gateway access key is required")
+            }
+        }
+        if (controlRequest) return controlHandler!!.invoke(session)
+        if (session.method != Method.GET && session.method != Method.HEAD) {
+            return textResponse(Response.Status.METHOD_NOT_ALLOWED, "Use GET or HEAD")
+        }
         val uri = session.uri ?: return textResponse(
             Response.Status.NOT_FOUND,
             "Not Found"
         )
 
-        val segments = uri.substringBefore('?').split('/').filter { it.isNotEmpty() }
+        val path = uri.substringBefore('?').split('/').filter { it.isNotEmpty() }
+        val selectedEngine = if (path.firstOrNull() == "torrents" && path.size >= 5) {
+            sourceForTorrent?.invoke(path[1])
+        } else engine
+        val segments = if (path.firstOrNull() == "torrents") path.drop(2) else path
         if (segments.size < 3 || segments[0] != "files") {
             return textResponse(
                 Response.Status.BAD_REQUEST,
@@ -54,7 +88,8 @@ class LocalHttpStreamServer(
             return textResponse(Response.Status.BAD_REQUEST, "Invalid file index")
         }
 
-        val engineStatus = engine.status.value
+        val source = selectedEngine ?: return textResponse(Response.Status.NOT_FOUND, "Torrent not found")
+        val engineStatus = source.status.value
         if (!engineStatus.isReadyForDdl) {
             val unavailableText = engineStatus.stateText
                 .takeIf { it.isNotBlank() && it != "Idle" }
@@ -95,7 +130,7 @@ class LocalHttpStreamServer(
         val startByte = requestedRange?.start ?: 0L
         val endByte = requestedRange?.endInclusive
         val endByteOffset = endByte?.let { if (it == Long.MAX_VALUE) Long.MAX_VALUE else it + 1L }
-        val streamPair = engine.openFileStream(fileIndex, startByte, endByteOffset)
+        val streamPair = source.openFileStream(fileIndex, startByte, endByteOffset)
             ?: return textResponse(
                 Response.Status.SERVICE_UNAVAILABLE,
                 "Torrent stream is not available yet"
@@ -133,6 +168,11 @@ class LocalHttpStreamServer(
                 contentDisposition(streamEntry, attachment = requestedRange == null)
             )
         }
+    }
+
+    override fun stop() {
+        opened.toList().forEach { runCatching { it.close() } }
+        super.stop()
     }
 
     private fun parseRange(header: String, totalSize: Long): RangeResult {

@@ -30,6 +30,13 @@ The ARM64 preview targets macOS 12 or newer.
 
 ## iPhone and iPad
 
+The app now also includes a **Remote Background Downloads** panel. HTTPS links
+from a [hosted backend](server.md) use Apple's background URLSession independently
+of the local torrent engine, with persistent transfer records and Files sharing.
+The remote server must remain online. This new client code requires Xcode CI
+and device testing; Windows checks do not validate its compilation or background
+behavior. Local BitTorrent still follows the lifecycle described below.
+
 iOS cannot execute the existing JVM engine. The iOS target therefore uses
 **SwiftUI**, a small C interface over native **libtorrent 2.0.15**, and an HTTP
 server built with Apple's Network framework. Android and desktop keep their

@@ -77,6 +77,29 @@ class TorrentStreamEngineTest {
         return prefix.toByteArray() + MessageDigest.getInstance("SHA-1").digest(payload) + "ee".toByteArray()
     }
 
+    @Test(timeout = 30000)
+    fun desktopSeedingAndBandwidthOptionsReachTheNativeSession(): Unit = runBlocking {
+        val root = Files.createTempDirectory("torrent-settings-test").toFile()
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
+        val manager = SessionManager()
+        val engine = TorrentStreamEngine(root, scope, manager, EngineOptions(
+            seedAfterDownload = true, downloadLimitKiB = 128, uploadLimitKiB = 64, connections = 50
+        ))
+        try {
+            val payload = "configured torrent".toByteArray()
+            File(root, "payload.bin").writeBytes(payload)
+            engine.loadTorrentBytes(torrentMetadata(payload))
+            withTimeout(10000) { engine.status.first { it.stateText == "Seeding" } }
+            assertFalse("Seeding must remain active when enabled", manager.isPaused)
+            assertEquals(128 * 1024, manager.downloadRateLimit())
+            assertEquals(64 * 1024, manager.uploadRateLimit())
+            engine.pauseTransfers(true)
+            org.junit.Assert.assertTrue(manager.isPaused)
+            engine.pauseTransfers(false)
+            assertFalse(manager.isPaused)
+        } finally { engine.stopSession(); scope.cancel(); root.deleteRecursively() }
+    }
+
     companion object {
         @JvmStatic
         @BeforeClass

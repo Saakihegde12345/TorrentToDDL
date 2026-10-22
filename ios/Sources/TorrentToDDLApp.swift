@@ -5,6 +5,7 @@ import QuickLook
 @main
 @MainActor
 struct TorrentToDDLApp: App {
+    @UIApplicationDelegateAdaptor(RemoteDownloadAppDelegate.self) private var appDelegate
     @StateObject private var model = GatewayModel()
     @Environment(\.scenePhase) private var scenePhase
 
@@ -29,6 +30,8 @@ private struct GatewayView: View {
     @State private var magnet = ""
     @State private var pickingTorrent = false
     @State private var preview: URL?
+    @ObservedObject private var remote = RemoteDownloads.shared
+    @State private var remoteLink = ""
 
     var body: some View {
         ScrollView {
@@ -39,6 +42,30 @@ private struct GatewayView: View {
                         Text("YOUR DEVICE. YOUR GATEWAY.").font(.caption2.weight(.bold)).foregroundStyle(cyan)
                         Text("TorrentToDDL").font(.largeTitle.weight(.bold))
                         Text("iPhone & iPad · Preview").font(.caption).foregroundStyle(.secondary)
+                    }
+                }
+                card {
+                    Text("REMOTE BACKGROUND DOWNLOADS").font(.caption.weight(.bold)).foregroundStyle(cyan)
+                    Text("Download from a hosted gateway").font(.headline)
+                    Text("HTTPS transfers can continue while this app is in the background. Your remote gateway must stay online.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    TextField("Paste an HTTPS file download link", text: $remoteLink, axis: .vertical)
+                        .textInputAutocapitalization(.never).autocorrectionDisabled().lineLimit(2...4)
+                    Button("Download in background") { remote.add(remoteLink) }
+                        .disabled(remoteLink.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty).tint(lime)
+                    if let error = remote.errorMessage { Text(error).font(.caption).foregroundStyle(.red) }
+                    ForEach(remote.records) { record in
+                        VStack(alignment: .leading, spacing: 7) {
+                            Text(record.name).font(.subheadline.weight(.semibold))
+                            if record.total > 0 {
+                                ProgressView(value: min(1, Double(record.received) / Double(record.total))).tint(lime)
+                            }
+                            Text("\(record.state) · \(bytes(record.received))" + (record.total > 0 ? " / \(bytes(record.total))" : ""))
+                                .font(.caption).foregroundStyle(.secondary)
+                            if let path = record.savedPath {
+                                ShareLink(item: URL(fileURLWithPath: path)) { Label("Save to Files / Share", systemImage: "square.and.arrow.up") }
+                            } else if !record.finished { Button("Cancel", role: .destructive) { remote.cancel(record.taskID) } }
+                        }
                     }
                 }
                 card {
@@ -123,7 +150,7 @@ private struct GatewayView: View {
                 VStack(alignment: .leading, spacing: 9) {
                     Label("Keep this app open", systemImage: "iphone")
                         .font(.subheadline.weight(.semibold)).foregroundStyle(cyan)
-                    Text("This iOS preview stops transfers and the gateway when backgrounded. Keep TorrentToDDL visible while downloading or sharing LAN links.")
+                    Text("Local BitTorrent transfers and LAN sharing stop when this app is backgrounded. Use remote HTTPS downloads above for background transfers.")
                     Text("Cache progress counts torrent bytes; save progress counts bytes written to app storage. Cached files can save at disk speed.")
                     Text("LAN links have no authentication. Share only on a trusted network.")
                 }.font(.caption).foregroundStyle(.secondary).padding(.horizontal, 4)

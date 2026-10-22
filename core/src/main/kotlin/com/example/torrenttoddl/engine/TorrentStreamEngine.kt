@@ -50,10 +50,18 @@ interface TorrentFileSource {
     fun openFileStream(fileIndex: Int, startByteOffset: Long, endByteOffset: Long? = null): Pair<TorrentFileEntry, InputStream>?
 }
 
+data class EngineOptions(
+    val seedAfterDownload: Boolean = false,
+    val downloadLimitKiB: Int = 0,
+    val uploadLimitKiB: Int = 0,
+    val connections: Int = 200
+)
+
 class TorrentStreamEngine(
     private val downloadRootDir: File,
     private val scope: CoroutineScope,
-    private val sessionManager: SessionManager = SessionManager()
+    private val sessionManager: SessionManager = SessionManager(),
+    private val options: EngineOptions = EngineOptions()
 ) : TorrentFileSource {
     private val stateLock = Any()
     private val sessionLock = Any()
@@ -66,6 +74,8 @@ class TorrentStreamEngine(
 
     @Volatile
     private var uiVisible = true
+
+    @Volatile private var userPaused = false
 
     private var loadJob: Job? = null
     private var telemetryJob: Job? = null
@@ -106,6 +116,9 @@ class TorrentStreamEngine(
         synchronized(sessionLock) {
             return try {
                 val settings = SettingsPack()
+                settings.downloadRateLimit(options.downloadLimitKiB * 1024)
+                settings.uploadRateLimit(options.uploadLimitKiB * 1024)
+                settings.connectionsLimit(options.connections)
                 settings.setBoolean(
                     org.libtorrent4j.swig.settings_pack.bool_types.enable_dht.swigValue(),
                     true
@@ -316,7 +329,7 @@ class TorrentStreamEngine(
                         val totalBytes = torrentStatus.totalWanted().coerceAtLeast(0L)
                         val fullyCached = torrentStatus.isSeeding
                         val cachePercent = cachedPercent(cachedBytes, totalBytes, fullyCached)
-                        if (fullyCached && !cachedTransfersPaused) {
+                        if (fullyCached && !options.seedAfterDownload && !cachedTransfersPaused) {
                             synchronized(sessionLock) {
                                 if (!isCurrentGeneration(generation)) return@launch
                                 // A gateway need not keep seeding after caching. Keep
@@ -340,7 +353,9 @@ class TorrentStreamEngine(
                                 stillCurrent = false
                             } else {
                                 _status.value = _status.value.copy(
-                                    stateText = if (fullyCached) "Cached (peer transfers paused)" else _status.value.stateText,
+                                    stateText = if (userPaused) "Paused" else if (fullyCached) {
+                                        if (options.seedAfterDownload) "Seeding" else "Cached (seeding disabled)"
+                                    } else "Downloading",
                                     progressPercent = cachePercent,
                                     cachedBytes = cachedBytes,
                                     totalBytes = totalBytes,
@@ -441,6 +456,14 @@ class TorrentStreamEngine(
 
     fun setUiVisible(visible: Boolean) {
         uiVisible = visible
+    }
+
+    fun pauseTransfers(paused: Boolean) {
+        synchronized(sessionLock) {
+            userPaused = paused
+            if (paused) sessionManager.pause()
+            else if (options.seedAfterDownload || _status.value.progressPercent < 100f) sessionManager.resume()
+        }
     }
 
     private fun beginLoad(stateText: String): Long {

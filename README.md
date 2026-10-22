@@ -171,14 +171,18 @@ version number cannot fix a signing-certificate mismatch.
 
 </details>
 
-## Desktop preview · in development
+## Desktop workspace · Windows 1.1.0
 
-The shared Kotlin engine now has a Compose Desktop interface. The preview build
+The shared Kotlin engine now has a Compose Desktop workspace with a persistent
+multi-torrent queue, transfer/file tables, download settings, bandwidth and
+seeding controls, authenticated sharing, and a separate backend process.
+Stop terminates that backend while the desktop stays open. Minimized transfers
+continue, and close-to-tray is configurable. The build
 targets **Windows x64**, **Intel/Apple Silicon macOS** and **Linux x64**; Android remains supported.
 
 | Platform | Preview installer |
 | :--- | :--- |
-| Windows x64 | `TorrentToDDL-windows-x64.msi` |
+| Windows x64 | `TorrentToDDL-windows-x64.msi` or portable `.zip` |
 | Intel macOS | `TorrentToDDL-macos-x64.dmg` |
 | Apple Silicon macOS | `TorrentToDDL-macos-arm64.dmg` |
 | Debian / Ubuntu x64 | `TorrentToDDL-linux-x64.deb` |
@@ -186,6 +190,15 @@ targets **Windows x64**, **Intel/Apple Silicon macOS** and **Linux x64**; Androi
 [Desktop build status](https://github.com/Saakihegde12345/TorrentToDDL/actions/workflows/build-desktop.yml)
 · [Preview releases](https://github.com/Saakihegde12345/TorrentToDDL/releases)
 · [Desktop setup, behavior and limitations](docs/desktop.md)
+
+**Windows source quick start:** double-click `Start-Windows.cmd`. It prepares
+local build tools on the first run, tests and builds the app, then opens it.
+Portable releases include Java: extract the ZIP and open
+`TorrentToDDL/TorrentToDDL.exe`.
+
+An optional [headless server](docs/server.md) supports remote hosting with
+separate administration and download keys. Public deployment requires your own
+server and HTTPS setup.
 
 The workflow publishes direct installer assets only after desktop native tests,
 packaged-launcher checks and the Android regression build pass. Desktop installers

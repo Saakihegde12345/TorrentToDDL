@@ -1,0 +1,10 @@
+.git
+.tools
+.gradle
+**/build
+dist
+.native-build
+.omnirush
+*.jks
+*.keystore
+.env

@@ -1,10 +1,11 @@
 import org.jetbrains.compose.desktop.application.dsl.TargetFormat
+import java.nio.file.Files
 
 plugins {
     id("org.jetbrains.kotlin.jvm")
     id("org.jetbrains.compose")
 }
-version = "1.0.0"
+version = "1.1.0"
 kotlin { jvmToolchain(17) }
 val nativeHost = when {
     System.getProperty("os.name").startsWith("Windows") -> "windows"
@@ -29,11 +30,12 @@ dependencies {
 compose.desktop {
     application {
         mainClass = "com.example.torrenttoddl.desktop.MainKt"
+        jvmArgs("-Xmx1024m")
         nativeDistributions {
             targetFormats(TargetFormat.Msi, TargetFormat.Dmg, TargetFormat.Deb)
             packageName = "TorrentToDDL"
-            packageVersion = "1.0.0"
-            description = "Local torrent-to-HTTP gateway — desktop preview"
+            packageVersion = "1.1.0"
+            description = "Torrent download workspace and authenticated HTTP gateway"
             vendor = "TorrentToDDL"
             includeAllModules = true
             windows {
@@ -51,4 +53,42 @@ tasks.register<JavaExec>("smokeTest") {
     mainClass.set("com.example.torrenttoddl.desktop.MainKt")
     args("--smoke-test")
 }
-tasks.test { useJUnit() }
+tasks.test {
+    useJUnit()
+    systemProperty("torrenttoddl.worker.classpath", sourceSets["main"].runtimeClasspath.asPath)
+}
+
+val prepareWindowsLauncher by tasks.registering {
+    doLast {
+        // jpackage marks its Windows launcher read-only. Clear that attribute
+        // before Compose replaces an older bundled app during a rebuild.
+        val launcher = layout.buildDirectory.file("compose/binaries/main/app/TorrentToDDL/TorrentToDDL.exe").get().asFile
+        if (nativeHost == "windows" && launcher.exists()) Files.setAttribute(launcher.toPath(), "dos:readonly", false)
+    }
+}
+tasks.matching { it.name == "createDistributable" }.configureEach { dependsOn(prepareWindowsLauncher) }
+
+val verifyWindowsApp by tasks.registering(Exec::class) {
+    dependsOn("createDistributable")
+    executable(layout.buildDirectory.file(
+        "compose/binaries/main/app/TorrentToDDL/TorrentToDDL.exe"
+    ).get().asFile.absolutePath)
+    args("--smoke-test")
+    onlyIf { nativeHost == "windows" }
+}
+
+tasks.register<Zip>("packageWindowsPortable") {
+    dependsOn(":core:test", "test", verifyWindowsApp)
+    from(layout.buildDirectory.dir("compose/binaries/main/app"))
+    destinationDirectory.set(rootProject.layout.projectDirectory.dir("dist"))
+    archiveFileName.set("TorrentToDDL-windows-x64.zip")
+    doFirst { check(nativeHost == "windows") { "Build Windows packages on Windows." } }
+}
+
+tasks.register<Sync>("headlessDistribution") {
+    dependsOn(tasks.jar)
+    from(configurations.runtimeClasspath) { into("lib") }
+    from(tasks.jar) { into("lib") }
+    from(rootProject.file("scripts/run-server.sh"))
+    into(layout.buildDirectory.dir("headless"))
+}
